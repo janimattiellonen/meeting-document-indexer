@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@react-router/node':
-        specifier: ^8.4.0
-        version: 8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)
       isbot:
         specifier: ^5.1.36
         version: 5.2.2
