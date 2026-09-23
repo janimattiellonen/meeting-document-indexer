@@ -1,20 +1,9 @@
-"""Integration tests against the compose database (`docker compose up -d`). Skipped if it isn't running."""
+import unicodedata
 
 import psycopg
-import pytest
+from conftest import MIGRATIONS, up_section
 
 from meeting_indexer import db
-
-
-@pytest.fixture
-def conn():
-    try:
-        connection = db.connect()
-    except psycopg.OperationalError:
-        pytest.skip("database not running")
-    with connection:
-        yield connection
-        connection.rollback()
 
 
 def test_schema_is_migrated(conn: psycopg.Connection) -> None:
@@ -34,8 +23,34 @@ def test_finnish_stemming_matches_inflected_forms(conn: psycopg.Connection) -> N
 def test_document_counts_groups_by_status(conn: psycopg.Connection) -> None:
     conn.execute(
         "INSERT INTO documents (rel_path, sha256, file_type, status)"
-        " VALUES ('test/a.pdf', 'x', 'pdf', 'indexed'), ('test/b.pdf', 'y', 'pdf', 'failed')"
+        " VALUES ('a.pdf', 'x', 'pdf', 'indexed'), ('b.pdf', 'y', 'pdf', 'indexed'),"
+        " ('c.pdf', 'z', 'pdf', 'failed')"
     )
-    counts = db.document_counts(conn)
-    assert counts.get("indexed", 0) >= 1
-    assert counts.get("failed", 0) >= 1
+    assert db.document_counts(conn) == {"indexed": 2, "failed": 1}
+    assert [(d.rel_path, d.status) for d in db.problem_documents(conn)] == [("c.pdf", "failed")]
+
+
+def test_register_pending_adds_only_new_files(conn: psycopg.Connection) -> None:
+    assert db.register_pending(conn, [("a.pdf", "pdf"), ("b.doc", "doc")]) == 2
+    assert db.register_pending(conn, [("a.pdf", "pdf"), ("c.pdf", "pdf")]) == 1
+    assert db.stored_states(conn) == {
+        "a.pdf": (None, "pending"),
+        "b.doc": (None, "pending"),
+        "c.pdf": (None, "pending"),
+    }
+
+
+def test_nfc_migration_merges_a_path_stored_in_both_forms(conn: psycopg.Connection) -> None:
+    # New code registers the NFC form; a database not yet migrated still has the NFD one.
+    nfd, nfc = unicodedata.normalize("NFD", "pöytäkirja.pdf"), "pöytäkirja.pdf"
+    other = unicodedata.normalize("NFD", "kevätkokous.pdf")
+    conn.execute(
+        "INSERT INTO documents (rel_path, sha256, file_type, status, updated_at) VALUES"
+        " (%s, 'x', 'pdf', 'indexed', now() - interval '1 day'), (%s, NULL, 'pdf', 'pending', now()),"
+        " (%s, 'y', 'pdf', 'failed', now())",
+        (nfd, nfc, other),
+    )
+
+    conn.execute(up_section(MIGRATIONS / "20260923160000_nfc_document_paths.sql").encode())
+
+    assert db.stored_states(conn) == {nfc: ("x", "indexed"), "kevätkokous.pdf": ("y", "failed")}

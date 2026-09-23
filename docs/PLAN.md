@@ -3,9 +3,10 @@
 Searchable index of Puskasoturit ry meeting minutes (PDF / Word). Everything runs on the local
 machine; no document content ever leaves it.
 
-**Status:** Phase 1 (foundation) done – database in Docker, backend package, settings, `mi status`,
-pre-commit guard. `backend/poc.py` extracts meeting data using the local Qwen model; it becomes the
-Phase 2 pipeline.
+**Status:** Phase 2 (persisted indexing) implemented on branch `phase-2-indexing` – `mi index`,
+`mi reindex`, `mi show`, `mi eval`, `mi status`. Verified on the one real document so far (100% against
+its golden file). Still open for Phase 2: a run over the real corpus, especially old `.doc` files and
+2006-era PDFs, and more golden files.
 
 ### Known facts about the corpus
 
@@ -133,8 +134,6 @@ meeting-indexer/
 │       ├── routes/
 │       ├── api/                 # generated schema.d.ts + openapi-fetch client
 │       └── components/
-├── eval/
-│   └── run_eval.py              # reads golden files from data/eval/ (not committed)
 ├── scripts/backup.sh            # pg_dump to data/backups/
 ├── data/                        # GITIGNORED – real content lives only here
 │   ├── documents/               # DOCS_ROOT: the meeting minutes
@@ -142,8 +141,6 @@ meeting-indexer/
 │   └── backups/
 └── docs/PLAN.md
 ```
-
-`poc.py` moves into `backend/` as the starting point of `extract/` and `llm/`.
 
 ---
 
@@ -257,6 +254,9 @@ Indexes: GIN on every `search_tsv`, HNSW (`vector_cosine_ops`) on every `embeddi
 GIN `gin_trgm_ops` on `topics.title` and `person_aliases.alias`, B-tree on `meetings.meeting_date`.
 
 **Board members for a year** come from `attendance` of `board` meetings in that year, with roles.
+"That year" means the board's term, taken from the meeting number ("1/2026"), not the meeting date:
+a new board can hold its first meeting before the year starts (meeting 1/20XX can be held in
+December of the previous year).
 Later, general meetings (syyskokous) can also be extracted for *elected* officials, which is
 more authoritative than attendance.
 
@@ -267,27 +267,74 @@ more authoritative than attendance.
 `mi index` (default `DOCS_ROOT`) runs these steps for each file:
 
 1. **Discover** supported files and skip Office lock files (`~$…`).
-2. **Hash** the file. Skip it if `sha256` and `extractor_version` are unchanged (`--force` overrides).
+2. **Hash** the file. Skip it if `sha256`, `extractor_version` and the model are unchanged
+   (`--force` overrides). Failed and timed-out documents are *not* retried automatically; see
+   "Limits and failures" below.
 3. **Extract text per page.** Pages are kept separate so topics can be linked to a page. If
    there's no text layer, set `status = no_text` (OCR comes in Phase 8).
 4. **LLM extraction** with the Pydantic schema as `format`. Page markers (`[sivu 2]`) are
-   included in the prompt text. Long documents (over ~24k tokens) are split into sections,
-   and the topic lists are merged.
-5. **Validate and repair.** Parse the date, and fall back to a date in the filename or text when
+   included in the prompt text. The context window grows with the document (8k–64k tokens).
+   A longer document fails with a clear error instead of being cut off silently; splitting it
+   into sections is only worth building if that ever happens.
+   - **Output is capped at 8,192 tokens, with a 15-minute timeout.** In Phase 2 the model once
+     emitted filler endlessly (a failure mode of format-constrained output). With the cap, that
+     fails one document instead of hanging the run.
+   - **The model is asked for as little structure as possible.** A separate item-number field is
+     what triggered the endless filler. The model copies titles as written ("5. Otsikko"), and
+     code splits off the number and strips the association letterhead from the meeting title.
+5. **Validate and repair.** Parse the date, and fall back to the first date on the first page when
    the model gives none or something implausible. Check that topic titles actually appear in the
    text (fuzzy match), and assign `page_no` by that match instead of trusting the model.
-6. **People.** Match each name to `person_aliases`, exactly first, then with trigram similarity
-   ≥ 0.8. Unmatched names create a new person. Uncertain matches are logged for review with
-   `mi people`.
+6. **People.** Match each name to `person_aliases`, exactly first (ignoring case), then with
+   trigram similarity ≥ 0.8. Unmatched names create a new person.
+   - The threshold is deliberately conservative. A one-letter typo (*Meikäläinen* /
+     *Meikälainen*) scores 0.70, but two different people (*Mikko* / *Mika Virtanen*) score 0.71,
+     so no threshold separates them.
+   - Wrongly merging two people is worse than one person having two spellings, which
+     `mi people merge` fixes by hand (Phase 6).
 7. **Embed** topics (title + decisions + summary) and chunks (~800-token windows of page text)
    using `embed.py`.
 8. **Write** everything for the document in one transaction: delete the old rows, insert the new ones.
+   Connections use autocommit, so each document's transaction commits on its own. Otherwise
+   psycopg's implicit transaction would hold every document until the run ends.
 
-- Each file runs in its own step: one failure marks that document `failed` and the run continues.
 - Progress is shown with the elapsed time per document and an estimated time remaining.
-  At ~80 s/document, a few hundred documents is an overnight job.
-- Other commands: `mi status` (counts per status, list of failures), `mi reindex <path>`,
-  `mi people list|merge <a> <b>`.
+  At ~90 s/document, a few hundred documents is an overnight job.
+
+### Limits and failures
+
+One document must never hold up a run, and nothing a run skips may go unrecorded.
+
+- **Hard time limit per document: 10 minutes by default** (`DOC_TIME_LIMIT_SECONDS`, or
+  `mi index --time-limit N`). Reading the file and the LLM extraction run in a worker process
+  (`limits.py`), which is killed when the limit is reached. That holds whichever step hangs,
+  including C code such as PyMuPDF. When the worker is killed, Ollama cancels the request too
+  ("Request terminated … context canceled" in its log), so nothing keeps generating in the
+  background. 10 minutes is ~6× a normal document and covers the longest legitimate generation
+  (the 8,192-token output cap at ~21 tokens/s ≈ 7 min).
+- **A document that fails or times out is recorded and the run continues.** Its row gets status
+  `failed` or `timed_out`, the error, the attempt count, the time of the last attempt and how
+  long it took. Any earlier extraction of the document is kept.
+- **No automatic retries.** Retrying would spend the full limit on the same file on every run.
+  Failed and timed-out documents are retried when the file changes, with
+  `mi index --retry-failed`, or with `mi reindex <path>`.
+- **The run stops only for problems that aren't about one file:**
+  - Ollama doesn't respond after a failure, or
+  - 3 documents in a row fail (`MAX_CONSECUTIVE_FAILURES`), which points at the system.
+
+  Without this, a hung Ollama would cost the full limit for every remaining document.
+- **The gaps are always visible:**
+  - Every file is registered as `pending` before processing starts, so files a stopped or
+    crashed run never reached stay listed.
+  - `mi status` lists pending, timed-out, failed and scanned documents. It also compares the
+    disk with the database: files not registered yet, files changed since indexing, and files
+    that are gone from disk.
+- **Every run writes a log file** to `data/logs/index-<time>.log` (gitignored). It records each
+  document's outcome, full error tracebacks (including those from the worker process), and the
+  names of documents not reached if the run stopped.
+- Other commands: `mi status` (counts per status, lists failed and scanned documents),
+  `mi reindex <path>`, `mi show <path>` (prints one document's extraction), and
+  `mi people list|merge <a> <b>` (Phase 6).
 
 ---
 
@@ -368,10 +415,11 @@ more authoritative than attendance.
 
 - **Golden set:** hand-check the output for 8–10 representative documents (spread across
   2006–2026, both `.pdf` and `.doc`). The golden files contain real names and content, so they
-  live in `data/eval/` and are never committed. `eval/run_eval.py` reports per-field accuracy:
+  live in `data/eval/` and are never committed. `mi eval` reports per-field accuracy:
   date, location, attendees (precision and recall), topic count, topic titles. Run it whenever
   prompts, schemas or models change. It is also how we compare speed against accuracy for a
-  smaller model.
+  smaller model. `mi eval --init <document>` writes a draft from the current extraction, to be
+  corrected by hand against the document.
 - **Backend:** pytest unit tests for text extraction, date and name normalisation, and RRF
   merging. Integration tests against a throwaway Postgres (a compose test profile) for
   migrations, repositories and search ranking on a small fixture set. The LLM is mocked except
