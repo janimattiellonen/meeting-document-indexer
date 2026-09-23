@@ -30,6 +30,7 @@ from meeting_indexer.normalize import (
     topic_pages,
 )
 from meeting_indexer.people import resolve_person
+from meeting_indexer.search.lemmas import document_lemmas
 
 log = logging.getLogger(__name__)
 
@@ -239,13 +240,18 @@ def store(
                 "summary": topic.summary,
                 "decisions": topic.decisions,
                 "page_no": page_no,
+                "title_lemmas": document_lemmas(title),
+                "decisions_lemmas": document_lemmas(topic.decisions),
+                "summary_lemmas": document_lemmas(topic.summary),
             }
             for i, (topic, (item_number, title), page_no) in enumerate(
                 zip(meeting.topics, numbered, page_numbers, strict=True)
             )
         ],
     )
-    db.insert_chunks(conn, document_id, chunk_pages(pages))
+    db.insert_chunks(
+        conn, document_id, [(page_no, text, document_lemmas(text)) for page_no, text in chunk_pages(pages)]
+    )
     db.set_raw_extraction(conn, meeting_id, {"llm": meeting.model_dump(), "warnings": warnings.items})
 
 

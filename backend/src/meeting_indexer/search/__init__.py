@@ -1,13 +1,13 @@
 """Full-text search over agenda items and document text, grouped by meeting.
 
-Each query word is matched as a prefix in two forms, OR'ed together:
-- stemmed by Postgres' `finnish` configuration ("junioreiden" -> junior:*), and
-- as typed ("verkko" -> verkko:*). The stemmer turns "verkko" into "verko", which is not a prefix of
-  "verkkosivut", so the stemmed form alone would miss it.
+Each query word matches in any of three ways, OR'ed together:
+- by its Voikko base form, against the base forms and compound parts indexed in `lemma_tsv`
+  ("hallitus" finds "hallituksen", "kisa" finds "seuramestaruuskisoille"; see lemmas.py);
+- as a prefix stemmed by Postgres' `finnish` configuration ("junioreiden" -> junior:*);
+- as a prefix as typed ("verkko" -> verkko:*, "Kvarnbäck" -> Kvarnbäckin). This also covers words Voikko
+  doesn't know, such as names.
 All words must match, except Finnish stopwords ("ja", "on"), which the index leaves out and the query
-drops.
-The Snowball stemmer still misses stem changes such as hallitus/hallituksen; Voikko lemmatisation is
-the planned fix (docs/PLAN.md §8).
+drops. Matches are marked by highlight.py, which follows the same rules.
 """
 
 import re
@@ -19,16 +19,12 @@ import psycopg
 from psycopg import sql
 
 from meeting_indexer.llm import MeetingType
+from meeting_indexer.search import highlight, lemmas
 
 # Highlight markers in snippets. The frontend splits on them and renders plain text, so nothing from a
 # document is ever rendered as HTML. Extraction doesn't strip these control characters, but text rarely
 # contains them; if a document did, the worst case is a wrongly highlighted span.
-MARK_START, MARK_END = "\x02", "\x03"
-HEADLINE = (
-    f'StartSel="{MARK_START}", StopSel="{MARK_END}", MaxFragments=2, MinWords=6, MaxWords=24, '
-    'FragmentDelimiter=" … "'
-)
-TITLE_HEADLINE = f'StartSel="{MARK_START}", StopSel="{MARK_END}", HighlightAll=true'
+MARK_START, MARK_END = highlight.MARK_START, highlight.MARK_END
 
 WORD = re.compile(r"[\w-]+")
 MAX_MEETINGS = 50
@@ -58,13 +54,32 @@ def drop_stopwords(conn: psycopg.Connection, words: list[str]) -> list[str]:
 
 
 def tsquery(words: list[str]) -> sql.Composable:
-    """All words must match; each one as a stemmed or an unstemmed prefix."""
+    """All words must match; each one by a base form, or as a stemmed or an unstemmed prefix.
+
+    Searched against `search_tsv || lemma_tsv`: prefixes match the stemmed lexemes of search_tsv and the
+    base forms of lemma_tsv alike.
+    """
     return sql.SQL(" && ").join(
-        sql.SQL("(to_tsquery('finnish', {prefix}) || to_tsquery('simple', {prefix}))").format(
-            prefix=sql.Literal(f"{word}:*")
+        sql.SQL("({alternatives})").format(
+            alternatives=sql.SQL(" || ").join(
+                [
+                    sql.SQL("to_tsquery('finnish', {p})").format(p=sql.Literal(f"{word}:*")),
+                    sql.SQL("to_tsquery('simple', {p})").format(p=sql.Literal(f"{word}:*")),
+                    *(
+                        sql.SQL("plainto_tsquery('simple', {f})").format(f=sql.Literal(form))
+                        for form in lemmas.query_forms(word)
+                    ),
+                ]
+            )
         )
         for word in words
     )
+
+
+def topic_snippet(decisions: str | None, summary: str | None, query: highlight.Query) -> str:
+    # The decision is often repeated word for word in the description.
+    parts = [decisions if decisions and decisions not in (summary or "") else None, summary]
+    return highlight.fragments(" ".join(p for p in parts if p), query)
 
 
 @dataclass
@@ -116,8 +131,6 @@ def search(
     if not words:
         return []
     params = {
-        "headline": HEADLINE,
-        "title_headline": TITLE_HEADLINE,
         "year_from": year_from,
         "year_to": year_to,
         "meeting_type": meeting_type,
@@ -126,17 +139,12 @@ def search(
 
     topic_rows = conn.execute(
         sql.SQL(f"""
-        SELECT t.meeting_id, t.id, t.item_number,
-               ts_headline('finnish', t.title, q, %(title_headline)s),
-               ts_headline('finnish', concat_ws(' ',
-                   -- the decision is often repeated word for word in the description
-                   CASE WHEN strpos(coalesce(t.summary, ''), t.decisions) = 0 THEN t.decisions END,
-                   t.summary), q, %(headline)s),
-               t.page_no, t.decisions IS NOT NULL, ts_rank_cd(t.search_tsv, q)
+        SELECT t.meeting_id, t.id, t.item_number, t.title, t.decisions, t.summary,
+               t.page_no, ts_rank_cd(t.search_tsv || t.lemma_tsv, q)
         FROM topics t
         JOIN meetings m ON m.id = t.meeting_id,
              (SELECT {{query}} AS q) AS search_query
-        WHERE t.search_tsv @@ q {FILTERS}
+        WHERE (t.search_tsv || t.lemma_tsv) @@ q {FILTERS}
         ORDER BY t.meeting_id, t.ordinal
         """).format(query=matches),
         params,
@@ -144,27 +152,35 @@ def search(
 
     chunk_rows = conn.execute(
         sql.SQL(f"""
-        SELECT m.id, c.page_no, ts_headline('finnish', c.text, q, %(headline)s),
-               ts_rank_cd(c.search_tsv, q)
+        SELECT m.id, c.page_no, c.text, ts_rank_cd(c.search_tsv || c.lemma_tsv, q)
         FROM chunks c
         JOIN meetings m ON m.document_id = c.document_id,
              (SELECT {{query}} AS q) AS search_query
-        WHERE c.search_tsv @@ q {FILTERS}
+        WHERE (c.search_tsv || c.lemma_tsv) @@ q {FILTERS}
         ORDER BY m.id, c.ordinal
         """).format(query=matches),
         params,
     ).fetchall()
 
+    marks = highlight.Query.of(words)
     scores: dict[int, float] = {}
     topics: dict[int, list[TopicHit]] = {}
-    for meeting_id, topic_id, number, title, snippet, page_no, has_decision, rank in topic_rows:
+    for meeting_id, topic_id, number, title, decisions, summary, page_no, rank in topic_rows:
         topics.setdefault(meeting_id, []).append(
-            TopicHit(topic_id, number, title, snippet, page_no, has_decision)
+            TopicHit(
+                topic_id,
+                number,
+                highlight.mark_all(title, marks),
+                topic_snippet(decisions, summary, marks),
+                page_no,
+                decisions is not None,
+            )
         )
         scores[meeting_id] = max(scores.get(meeting_id, 0.0), rank)
     text: dict[int, list[TextHit]] = {}
-    for meeting_id, page_no, snippet, rank in chunk_rows:
-        text.setdefault(meeting_id, []).append(TextHit(page_no, snippet))
+    for meeting_id, page_no, chunk_text, rank in chunk_rows:
+        if len(text.get(meeting_id, [])) < 2:  # only the first two are shown
+            text.setdefault(meeting_id, []).append(TextHit(page_no, highlight.fragments(chunk_text, marks)))
         scores[meeting_id] = max(scores.get(meeting_id, 0.0), rank * CHUNK_WEIGHT)
     if not scores:
         return []

@@ -54,3 +54,27 @@ def test_nfc_migration_merges_a_path_stored_in_both_forms(conn: psycopg.Connecti
     conn.execute(up_section(MIGRATIONS / "20260923160000_nfc_document_paths.sql").encode())
 
     assert db.stored_states(conn) == {nfc: ("x", "indexed"), "kevätkokous.pdf": ("y", "failed")}
+
+
+def test_relemmatize_fills_rows_indexed_before_lemma_search(conn: psycopg.Connection) -> None:
+    conn.execute(
+        """
+        WITH d AS (INSERT INTO documents (rel_path, file_type, status) VALUES ('a.pdf', 'pdf', 'indexed')
+                   RETURNING id),
+             m AS (INSERT INTO meetings (document_id, title, meeting_type, raw_extraction)
+                   SELECT id, 'Kokous', 'board', '{}' FROM d RETURNING id, document_id)
+        INSERT INTO topics (meeting_id, ordinal, title, summary)
+        SELECT id, 0, 'Muut asiat', 'Keskusteltiin talkoista.' FROM m
+        """
+    )
+    assert db.unlemmatized_counts(conn) == (1, 0)
+
+    assert (
+        db.relemmatize(conn, lambda text: "talkoo" if text and "talkoista" in text else "", only_missing=True)
+        == 1
+    )
+
+    assert db.unlemmatized_counts(conn) == (0, 0)
+    row = conn.execute("SELECT lemma_tsv::text FROM topics").fetchone()
+    assert row == ("'talkoo':1C",)
+    assert db.relemmatize(conn, lambda text: "", only_missing=True) == 0
