@@ -1,6 +1,6 @@
 import { Form, Link, useNavigation } from "react-router";
 
-import { api, type MeetingHit, orThrow } from "~/api/client";
+import { api, documentUrl, type MeetingHit, orThrow } from "~/api/client";
 import { Highlight } from "~/components/Highlight";
 import { formatDate, meetingTypeLabel } from "~/lib/format";
 import { MAX_QUERY_LENGTH, parseSearch, SORTS } from "~/lib/search";
@@ -147,7 +147,16 @@ function ResultCard({ hit }: { hit: MeetingHit }) {
           </Link>
         </h2>
         <span className="text-sm text-stone-500">
-          {formatDate(hit.meeting_date)} · {meetingTypeLabel(hit.meeting_type)}
+          {formatDate(hit.meeting_date)} · {meetingTypeLabel(hit.meeting_type)} ·{" "}
+          {/* The original, at the first page with a match */}
+          <a
+            href={documentUrl(hit.document_id, topics[0]?.page_no ?? text[0]?.page_no)}
+            target="_blank"
+            rel="noreferrer"
+            className="underline hover:text-stone-800 dark:hover:text-stone-200"
+          >
+            Avaa pöytäkirja
+          </a>
         </span>
       </header>
 
