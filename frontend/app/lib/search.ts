@@ -1,5 +1,13 @@
-export const SORTS = { relevance: "Osuvin ensin", oldest: "Vanhin ensin", newest: "Uusin ensin" } as const;
-export type Sort = keyof typeof SORTS;
+import type { operations } from "~/api/schema";
+
+// From the generated API schema: a sort added to the backend fails typecheck until it has a label here.
+export type Sort = NonNullable<operations["search_meetings_api_search_get"]["parameters"]["query"]["sort"]>;
+
+export const SORTS: Record<Sort, string> = {
+  relevance: "Osuvin ensin",
+  oldest: "Vanhin ensin",
+  newest: "Uusin ensin",
+};
 // The API rejects longer queries (Query(max_length=200) in backend api/__init__.py).
 export const MAX_QUERY_LENGTH = 200;
 
