@@ -414,3 +414,25 @@ def eval_command(
             f"\n{len(scored)} documents: fields correct {percent(fields)}, "
             f"average recall (people, topics) {percent(recall)}"
         )
+
+
+@app.command()
+def serve(port: Annotated[int, typer.Option(help="Port on 127.0.0.1")] = 8000) -> None:
+    """Run the API for the frontend. Listens on this machine only."""
+    import uvicorn
+
+    from meeting_indexer.api import create_app
+
+    uvicorn.run(create_app(), host="127.0.0.1", port=port)
+
+
+@app.command()
+def openapi(
+    output: Annotated[Path, typer.Argument(help="Where to write the OpenAPI schema (JSON)")],
+) -> None:
+    """Write the API's OpenAPI schema, from which the frontend's TypeScript types are generated."""
+    from meeting_indexer.api import create_app
+
+    schema = create_app().openapi()
+    output.write_text(json.dumps(schema, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    typer.echo(f"Wrote {output}")

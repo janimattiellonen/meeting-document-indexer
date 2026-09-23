@@ -1,0 +1,6 @@
+build/
+.react-router/
+pnpm-lock.yaml
+app/api/openapi.json
+app/api/schema.d.ts
+.agents/

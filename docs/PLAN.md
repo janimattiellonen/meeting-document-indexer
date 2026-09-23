@@ -3,10 +3,22 @@
 Searchable index of Puskasoturit ry meeting minutes (PDF / Word). Everything runs on the local
 machine; no document content ever leaves it.
 
-**Status:** Phase 2 (persisted indexing) implemented on branch `phase-2-indexing` – `mi index`,
-`mi reindex`, `mi show`, `mi eval`, `mi status`. Verified on the one real document so far (100% against
-its golden file). Still open for Phase 2: a run over the real corpus, especially old `.doc` files and
-2006-era PDFs, and more golden files.
+**Status:**
+- **Phase 2** (persisted indexing): done on branch `phase-2-indexing`; still waiting for a run over the full set of documents.
+- **Phases 3–4 (thin slice):** on branch `phase-3-4-search-ui`:
+  - a search API (Postgres full-text search, prefix matching, stemmed or as typed);
+  - the React Router SPA with search, a meeting list, and a meeting page with the PDF.
+  - Voikko lemmatisation (§8) is still to do.
+
+**Running it locally:**
+
+```bash
+docker compose up -d                   # database
+cd backend && uv run mi serve          # API on 127.0.0.1:8000
+cd frontend && pnpm dev                # app on http://127.0.0.1:5180
+```
+
+After an API change, `pnpm gen:api` in `frontend/` regenerates the TypeScript types.
 
 ### Known facts about the corpus
 
@@ -73,7 +85,7 @@ What this means for the plan:
                        │     │                     └──► PostgreSQL 17 + pgvector (Docker)   │
                        │     │ /api (JSON)               127.0.0.1:5434                      │
                        │     │                                                              │
-                       │   React Router 7 SPA (TypeScript) ◄── browser                      │
+                       │   React Router 8 SPA (TypeScript) ◄── browser                      │
                        └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,7 +93,7 @@ What this means for the plan:
   normalisation, so a query is always embedded exactly like the indexed content.
 - **Ollama runs natively**, because Docker on macOS has no GPU access (MLX would fall back to CPU).
   Containers reach it through `host.docker.internal:11434`.
-- **The frontend is a static SPA** (React Router 7, `ssr: false`) that talks only to the API.
+- **The frontend is a static SPA** (React Router 8, `ssr: false`) that talks only to the API.
 
 ---
 
@@ -98,7 +110,7 @@ What this means for the plan:
 | Backend | Python 3.13, `uv`, FastAPI, `psycopg` 3, Pydantic v2 | Hand-written SQL; search queries are too specific for an ORM |
 | Document text | PyMuPDF, python-docx, macOS `textutil` (.doc/.rtf/.odt) | OCR later with `ocrmypdf` |
 | CLI | `typer` | `mi index`, `mi status`, … |
-| Frontend | React Router 7 (SPA mode), TypeScript strict, Vite, Tailwind, shadcn/ui | Finnish UI |
+| Frontend | React Router 8 (SPA mode), TypeScript strict, Vite, Tailwind, shadcn/ui | Finnish UI |
 | API types | `openapi-typescript` + `openapi-fetch` | Types generated from FastAPI's OpenAPI schema |
 | Quality | ruff, pyright, pytest · ESLint, Prettier, Vitest, Testing Library | |
 
@@ -129,7 +141,7 @@ meeting-indexer/
 │   │   ├── cli.py               # typer app: `mi …`
 │   │   └── api/                 # FastAPI app and routers
 │   └── tests/
-├── frontend/                    # React Router 7 SPA
+├── frontend/                    # React Router 8 SPA
 │   └── app/
 │       ├── routes/
 │       ├── api/                 # generated schema.d.ts + openapi-fetch client
@@ -151,10 +163,10 @@ meeting-indexer/
 | `db` | `pgvector/pgvector:pg17` | `127.0.0.1:5434:5432` | Named volume `pgdata`, healthcheck `pg_isready` |
 | `migrate` | `ghcr.io/amacneil/dbmate` | – | Runs `dbmate up`, `depends_on: db (healthy)` |
 | `api` | `backend/Dockerfile` | `127.0.0.1:8000:8000` | Profile `app`; docs dir mounted `:ro` at `/docs` |
-| `web` | `frontend/Dockerfile` (static build served by nginx or by FastAPI) | `127.0.0.1:5173:80` | Profile `app` |
+| `web` | `frontend/Dockerfile` (static build served by nginx or by FastAPI) | `127.0.0.1:5180:80` | Profile `app` |
 
 - **Development:** only `db` and `migrate` run in Docker. API, indexer and frontend run natively
-  (`uv run …`, `pnpm dev`) for a fast feedback loop. Vite proxies `/api` to `localhost:8000`,
+  (`uv run …`, `pnpm dev`) for a fast feedback loop. Vite (port 5180, since 5173 is used by other projects here) proxies `/api` to `localhost:8000`,
   so there's no CORS setup.
 - **"Appliance" mode:** `docker compose --profile app up` runs everything except Ollama. Inside
   compose, the API reaches the database as host `db`, so the local-host check in `config.py`
@@ -340,8 +352,17 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 
 ## 8. Search
 
-- **Full-text:** `websearch_to_tsquery('finnish', q)` against `topics`, `meetings` and `chunks`,
-  ranked with `ts_rank_cd`.
+- **Full-text (built in the Phase 3–4 slice, `search/__init__.py`):**
+  - Each query word (letters, digits and inner hyphens, at least two characters) is matched as a
+    prefix in two forms: stemmed (`to_tsquery('finnish', 'word:*')`) and as typed (`simple`).
+    The stemmer turns *verkko* into *verko*, which is not a prefix of *verkkosivut*.
+  - All words must match. Finnish stopwords (*ja*, *on*) are dropped, because the index leaves
+    them out.
+  - There are no search operators: `OR`, quotes and a leading `-` are read as ordinary words.
+    `websearch_to_tsquery` would interpret them, but it can't match prefixes.
+  - Searches `topics` (title, summary, decisions) and `chunks` (the raw text), ranked with
+    `ts_rank_cd`; a match in the raw text counts half. `meetings.search_tsv` (meeting title and
+    summary) is not queried yet.
 - **Known limitation, found in Phase 1:** the Snowball `finnish` stemmer handles regular endings
   (*verkkosivut* = *verkkosivuilla*), but misses stem changes and consonant gradation:
   *hallitus* ≠ *hallituksen*, *kokous* ≠ *kokouksessa*, *kisa* ≠ *kisoille*,
@@ -368,7 +389,7 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/search?q=&from=&to=&type=&person=&sort=` | Hybrid search, grouped by meeting |
+| GET | `/api/search?q=&year_from=&year_to=&type=&person=&sort=` | Hybrid search, grouped by meeting |
 | GET | `/api/meetings?year=&type=` | Meeting list (timeline) |
 | GET | `/api/meetings/{id}` | Full meeting: attendance, topics, summary |
 | GET | `/api/documents/{id}/file` | Streams the original file (`inline`; path must resolve inside `DOCS_ROOT`) |
@@ -378,16 +399,19 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 | POST | `/api/ask` | Question → answer with cited topics (Phase 7) |
 | POST | `/api/index` · GET `/api/index/status` | Start indexing from the UI and follow progress (Phase 8) |
 
+- Built so far: `/api/search` with `q` (1–200 characters), `year_from`/`year_to` (1900–2999),
+  `type` and `sort` (`relevance`, `oldest`, `newest`), full-text only; `/api/meetings` without
+  filters; `/api/meetings/{id}`; `/api/documents/{id}/file`. `person` comes with the people pages.
 - The API binds to `127.0.0.1` only.
 - The OpenAPI schema is exported to `frontend/app/api/schema.d.ts` with a `pnpm gen:api` script.
 
 ---
 
-## 10. Frontend (React Router 7 SPA)
+## 10. Frontend (React Router 8 SPA)
 
 | Route | Content |
 |---|---|
-| `/` | Search box and filters. Results are grouped by meeting (date, title, matching topics with highlights, "Avaa pöytäkirja" link). All state lives in the URL (`?q=…&from=…`) |
+| `/` | Search box and filters. Results are grouped by meeting (date, title, matching topics with highlights, "Avaa pöytäkirja" link). All state lives in the URL, with Finnish parameter names (`?q=…&alkaen=…&asti=…&jarjestys=…`) |
 | `/kokoukset` | Timeline of meetings by year |
 | `/kokoukset/:id` | Meeting details, with the PDF shown next to them (iframe `#page=N`) |
 | `/henkilot`, `/henkilot/:id` | People, and each person's roles and attendance over time |

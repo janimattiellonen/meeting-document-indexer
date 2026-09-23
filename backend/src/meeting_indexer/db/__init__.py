@@ -2,12 +2,13 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, time
-from typing import Literal
+from typing import Literal, LiteralString
 
 import psycopg
 from psycopg.types.json import Jsonb
 
 from meeting_indexer.config import get_settings
+from meeting_indexer.llm import MeetingType
 
 # The values of documents.status (its CHECK constraint lists the same ones).
 DocumentStatus = Literal["pending", "indexed", "no_text", "failed", "timed_out"]
@@ -260,6 +261,7 @@ class TopicView:
     summary: str | None
     decisions: str | None
     page_no: int | None
+    id: int
 
 
 @dataclass
@@ -272,7 +274,7 @@ class AttendeeView:
 @dataclass
 class MeetingView:
     title: str
-    meeting_type: str
+    meeting_type: MeetingType
     meeting_date: date | None
     start_time: time | None
     end_time: time | None
@@ -281,24 +283,39 @@ class MeetingView:
     warnings: list[str]
     attendees: list[AttendeeView]
     topics: list[TopicView]
+    id: int
+    document_id: int
+    rel_path: str
+    file_type: str
+    page_count: int | None
 
     def names(self, status: str) -> list[str]:
         return [a.name for a in self.attendees if a.status == status]
 
 
 def load_meeting(conn: psycopg.Connection, rel_path: str) -> MeetingView | None:
+    return _load_meeting(conn, "d.rel_path = %s", rel_path)
+
+
+def load_meeting_by_id(conn: psycopg.Connection, meeting_id: int) -> MeetingView | None:
+    return _load_meeting(conn, "m.id = %s", meeting_id)
+
+
+def _load_meeting(conn: psycopg.Connection, condition: LiteralString, value: object) -> MeetingView | None:
+    """condition is a fixed SQL fragment from this module; the value is always passed as a parameter."""
     row = conn.execute(
-        """
+        f"""
         SELECT m.id, m.title, m.meeting_type, m.meeting_date, m.start_time, m.end_time, m.location,
-               m.summary, coalesce(m.raw_extraction -> 'warnings', '[]')
+               m.summary, coalesce(m.raw_extraction -> 'warnings', '[]'),
+               d.id, d.rel_path, d.file_type, d.page_count
         FROM meetings m JOIN documents d ON d.id = m.document_id
-        WHERE d.rel_path = %s
+        WHERE {condition}
         """,
-        (rel_path,),
+        (value,),
     ).fetchone()
     if row is None:
         return None
-    meeting_id, *fields, warnings = row
+    meeting_id, *fields, warnings, document_id, rel_path, file_type, page_count = row
     attendees = conn.execute(
         """
         SELECT name_as_written, status, role FROM attendance
@@ -308,7 +325,7 @@ def load_meeting(conn: psycopg.Connection, rel_path: str) -> MeetingView | None:
     ).fetchall()
     topics = conn.execute(
         """
-        SELECT item_number, title, summary, decisions, page_no FROM topics
+        SELECT item_number, title, summary, decisions, page_no, id FROM topics
         WHERE meeting_id = %s ORDER BY ordinal
         """,
         (meeting_id,),
@@ -318,4 +335,43 @@ def load_meeting(conn: psycopg.Connection, rel_path: str) -> MeetingView | None:
         warnings=warnings,
         attendees=[AttendeeView(*a) for a in attendees],
         topics=[TopicView(*t) for t in topics],
+        id=meeting_id,
+        document_id=document_id,
+        rel_path=rel_path,
+        file_type=file_type,
+        page_count=page_count,
     )
+
+
+@dataclass
+class MeetingSummary:
+    id: int
+    title: str
+    meeting_type: MeetingType
+    meeting_date: date | None
+    location: str | None
+    topic_count: int
+    decision_count: int
+    document_id: int
+    file_type: str
+
+
+def list_meetings(conn: psycopg.Connection) -> list[MeetingSummary]:
+    """Every meeting, newest first."""
+    rows = conn.execute(
+        """
+        SELECT m.id, m.title, m.meeting_type, m.meeting_date, m.location,
+               count(t.id), count(t.decisions), d.id, d.file_type
+        FROM meetings m
+        JOIN documents d ON d.id = m.document_id
+        LEFT JOIN topics t ON t.meeting_id = m.id
+        GROUP BY m.id, d.id
+        ORDER BY m.meeting_date DESC NULLS LAST, m.title
+        """
+    ).fetchall()
+    return [MeetingSummary(*row) for row in rows]
+
+
+def document_rel_path(conn: psycopg.Connection, document_id: int) -> str | None:
+    row = conn.execute("SELECT rel_path FROM documents WHERE id = %s", (document_id,)).fetchone()
+    return row[0] if row else None
