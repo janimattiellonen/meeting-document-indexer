@@ -1,20 +1,6 @@
-"""Integration tests against the compose database (`docker compose up -d`). Skipped if it isn't running."""
-
 import psycopg
-import pytest
 
 from meeting_indexer import db
-
-
-@pytest.fixture
-def conn():
-    try:
-        connection = db.connect()
-    except psycopg.OperationalError:
-        pytest.skip("database not running")
-    with connection:
-        yield connection
-        connection.rollback()
 
 
 def test_schema_is_migrated(conn: psycopg.Connection) -> None:
@@ -34,8 +20,8 @@ def test_finnish_stemming_matches_inflected_forms(conn: psycopg.Connection) -> N
 def test_document_counts_groups_by_status(conn: psycopg.Connection) -> None:
     conn.execute(
         "INSERT INTO documents (rel_path, sha256, file_type, status)"
-        " VALUES ('test/a.pdf', 'x', 'pdf', 'indexed'), ('test/b.pdf', 'y', 'pdf', 'failed')"
+        " VALUES ('a.pdf', 'x', 'pdf', 'indexed'), ('b.pdf', 'y', 'pdf', 'indexed'),"
+        " ('c.pdf', 'z', 'pdf', 'failed')"
     )
-    counts = db.document_counts(conn)
-    assert counts.get("indexed", 0) >= 1
-    assert counts.get("failed", 0) >= 1
+    assert db.document_counts(conn) == {"indexed": 2, "failed": 1}
+    assert db.documents_with_status(conn, "failed") == [("c.pdf", None)]
