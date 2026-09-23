@@ -23,6 +23,8 @@ def connection(request: Request) -> Iterator[psycopg.Connection]:
 
 
 Conn = Annotated[psycopg.Connection, Depends(connection)]
+# Bounded so the value always fits the SQL int it is compared as; the frontend accepts the same range.
+Year = Annotated[int | None, Query(ge=1900, le=2999)]
 router = APIRouter(prefix="/api")
 
 
@@ -41,8 +43,8 @@ def health() -> dict[str, bool]:
 def search_meetings(
     conn: Conn,
     q: Annotated[str, Query(min_length=1, max_length=200)],
-    year_from: int | None = None,
-    year_to: int | None = None,
+    year_from: Year = None,
+    year_to: Year = None,
     type: MeetingType | None = None,
     sort: search.Sort = "relevance",
 ) -> SearchResponse:

@@ -110,6 +110,12 @@ def test_search_requires_a_query(client: TestClient) -> None:
     assert client.get("/api/search").status_code == 422
 
 
+@pytest.mark.parametrize("param", ["year_from", "year_to"])
+@pytest.mark.parametrize("year", [1000000000000, 1899, 3000])
+def test_search_rejects_an_impossible_year(client: TestClient, param: str, year: int) -> None:
+    assert client.get("/api/search", params={"q": "kokous", param: year}).status_code == 422
+
+
 def test_meetings_are_listed_newest_first(client: TestClient, indexed: None) -> None:
     meetings = client.get("/api/meetings").json()
     assert [m["title"] for m in meetings] == ["Hallituksen kokous 5/2021", "Hallituksen kokous 3/2019"]

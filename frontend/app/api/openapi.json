@@ -51,7 +51,9 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "integer"
+                  "type": "integer",
+                  "maximum": 2999,
+                  "minimum": 1900
                 },
                 {
                   "type": "null"
@@ -67,7 +69,9 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "integer"
+                  "type": "integer",
+                  "maximum": 2999,
+                  "minimum": 1900
                 },
                 {
                   "type": "null"

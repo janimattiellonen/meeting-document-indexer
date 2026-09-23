@@ -11,7 +11,7 @@ type Sort = keyof typeof SORTS;
 
 function parseYear(value: string | null): number | undefined {
   const year = Number(value);
-  return value && Number.isInteger(year) && year > 1900 && year < 3000 ? year : undefined;
+  return value && Number.isInteger(year) && year >= 1900 && year <= 2999 ? year : undefined;
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
