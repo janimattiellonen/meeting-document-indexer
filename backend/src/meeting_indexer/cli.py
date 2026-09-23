@@ -230,7 +230,19 @@ STATUS_COLORS: dict[ResultStatus, str] = {
 }
 
 
+def require_voikko() -> None:
+    """Exits with the installation instructions if Voikko can't be loaded."""
+    try:
+        lemmas.check_available()
+    except lemmas.VoikkoUnavailable as e:
+        typer.echo(str(e))
+        raise typer.Exit(1) from None
+
+
 def run_index(paths: list[Path] | None, force: bool, retry_failed: bool, time_limit: int | None) -> None:
+    # Checked before any extraction: storing a document needs its base forms, so without Voikko every
+    # document would fail only after its slow LLM extraction.
+    require_voikko()
     settings = get_settings()
     files = resolve_targets(paths, settings.docs_root)
     if not files:
@@ -443,11 +455,7 @@ def relemmatize(
 
     Needed once after upgrading to lemma search, and with --all after a change to search/lemmas.py.
     """
-    try:
-        lemmas.check_available()
-    except lemmas.VoikkoUnavailable as e:
-        typer.echo(str(e))
-        raise typer.Exit(1) from None
+    require_voikko()
     with db.connect() as conn:
         updated = db.relemmatize(conn, lemmas.document_lemmas, only_missing=not all_rows)
     typer.echo(f"Updated {updated} rows.")

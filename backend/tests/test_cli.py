@@ -4,10 +4,12 @@ from pathlib import Path
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
-from meeting_indexer import db
+from meeting_indexer import cli, db
 from meeting_indexer.cli import changed_files, resolve_targets
 from meeting_indexer.extract import sha256
+from meeting_indexer.search import lemmas
 
 
 @pytest.fixture
@@ -89,3 +91,23 @@ def test_an_unreadable_file_is_listed_instead_of_stopping_the_comparison(root: P
     assert changed == ["2019/hallitus-4-2019.pdf"]
     [line] = unreadable
     assert line.startswith("2019/hallitus-3-2019.pdf: PermissionError")
+
+
+@pytest.mark.parametrize("command", [["index"], ["reindex", "2019"]])
+def test_indexing_refuses_to_start_without_voikko(
+    command: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Without Voikko every document would go through the slow extraction and then fail on its base forms.
+    def unavailable(word: str) -> list[dict[str, str]]:
+        raise lemmas.VoikkoUnavailable("Voikko is not available. Install it with `brew install libvoikko`.")
+
+    def no_analyzer(*args: object) -> None:
+        raise AssertionError("the analyzer must not start")
+
+    monkeypatch.setattr(lemmas, "_analyze", unavailable)
+    monkeypatch.setattr(cli, "TimeLimitedAnalyzer", no_analyzer)
+
+    result = CliRunner().invoke(cli.app, command)
+
+    assert result.exit_code == 1
+    assert "brew install libvoikko" in result.output
