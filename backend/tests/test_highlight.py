@@ -54,3 +54,14 @@ def test_words_whose_base_form_or_compound_part_starts_with_the_typed_query_are_
     assert shown(mark_all("seuramestaruuskisoille kotisivu-uudistus", Query.of(["uudis", "kis"]))) == (
         "[seuramestaruuskisoille] [kotisivu-uudistus]"
     )
+
+
+def test_excerpts_close_to_each_other_do_not_repeat_words() -> None:
+    words = [f"w{i}" for i in range(60)]
+    words[5] = words[30] = "hallitus"
+
+    result = shown(fragments(" ".join(words), Query.of(["hallitus"])))
+
+    shown_words = [w for w in result.split() if w != "…"]
+    assert len(shown_words) == len(set(shown_words) - {"[hallitus]"}) + 2
+    assert result.count("[hallitus]") == 2

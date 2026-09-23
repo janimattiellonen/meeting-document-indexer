@@ -54,6 +54,7 @@ def mark_all(text: str, query: Query) -> str:
 
 def fragments(text: str, query: Query, *, max_words: int = 24, max_fragments: int = 2) -> str:
     """Up to max_fragments excerpts of about max_words words around matches, joined with " … ".
+    Excerpts that would overlap are merged into one, so no word is shown twice.
 
     Short texts are returned whole. With no match (it can happen when only the stemmed form matched),
     the start of the text is returned.
@@ -66,12 +67,18 @@ def fragments(text: str, query: Query, *, max_words: int = 24, max_fragments: in
         return _excerpt(text, spans, 0, max_words, query) + FRAGMENT_DELIMITER.rstrip()
 
     windows: list[tuple[int, int]] = []
+    taken = 0  # excerpts' worth of words used, merged ones included
     for hit in hits:
         if windows and hit < windows[-1][1]:
             continue  # already inside the previous excerpt
         start = max(0, min(hit - max_words // 3, len(spans) - max_words))
-        windows.append((start, start + max_words))
-        if len(windows) == max_fragments:
+        if windows and start <= windows[-1][1]:
+            # It would overlap or touch the previous excerpt: continue that one instead of repeating words.
+            windows[-1] = (windows[-1][0], min(start + max_words, len(spans)))
+        else:
+            windows.append((start, start + max_words))
+        taken += 1
+        if taken == max_fragments:
             break
     excerpts = [_excerpt(text, spans, start, end - start, query) for start, end in windows]
     prefix = FRAGMENT_DELIMITER.lstrip() if windows[0][0] > 0 else ""
