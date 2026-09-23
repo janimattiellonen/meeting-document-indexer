@@ -30,6 +30,7 @@ MARK_START, MARK_END = highlight.MARK_START, highlight.MARK_END
 log = logging.getLogger(__name__)
 
 MAX_MEETINGS = 50
+MAX_TEXT_SNIPPETS = 2  # raw-text snippets shown per meeting
 # A match in the raw text counts less than one in an agenda item's title, decision or description.
 CHUNK_WEIGHT = 0.5
 
@@ -189,7 +190,7 @@ def search(
         scores[meeting_id] = max(scores.get(meeting_id, 0.0), rank)
     text: dict[int, list[TextHit]] = {}
     for meeting_id, page_no, chunk_text, rank in chunk_rows:
-        if len(text.get(meeting_id, [])) < 2:  # only the first two are shown
+        if len(text.get(meeting_id, [])) < MAX_TEXT_SNIPPETS:
             text.setdefault(meeting_id, []).append(TextHit(page_no, highlight.fragments(chunk_text, marks)))
         scores[meeting_id] = max(scores.get(meeting_id, 0.0), rank * CHUNK_WEIGHT)
     if not scores:
@@ -214,7 +215,7 @@ def search(
             score=scores[mid],
             topics=topics.get(mid, []),
             # The raw text is shown only when no agenda item matched; otherwise it repeats them.
-            text=[] if mid in topics else text.get(mid, [])[:2],
+            text=[] if mid in topics else text.get(mid, []),
         )
         for mid, title, mtype, mdate, doc_id, file_type in meetings
     ]
