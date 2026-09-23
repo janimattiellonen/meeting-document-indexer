@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 import typer
 
-from meeting_indexer.cli import resolve_targets
+from meeting_indexer.cli import changed_files, resolve_targets
+from meeting_indexer.extract import sha256
 
 
 @pytest.fixture
@@ -49,3 +50,19 @@ def test_a_path_outside_the_root_is_rejected(root: Path, tmp_path: Path) -> None
     outside.write_bytes(b"%PDF")
     with pytest.raises(typer.BadParameter, match="not under DOCS_ROOT"):
         resolve_targets([outside], root)
+
+
+@pytest.mark.parametrize("state", ["indexed", "no_text", "failed", "timed_out"])
+def test_a_changed_file_is_listed_whatever_its_last_outcome(root: Path, state: str) -> None:
+    path = root / "2019" / "hallitus-3-2019.pdf"
+    stored = {"2019/hallitus-3-2019.pdf": (sha256(path), state)}
+    assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == []
+
+    path.write_bytes(b"%PDF korjattu")
+    assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == ["2019/hallitus-3-2019.pdf"]
+
+
+def test_pending_and_missing_files_are_not_listed_as_changed(root: Path) -> None:
+    path = root / "2019" / "hallitus-3-2019.pdf"
+    stored = {"2019/hallitus-3-2019.pdf": (None, "pending"), "2019/poistettu.pdf": ("x", "indexed")}
+    assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == []

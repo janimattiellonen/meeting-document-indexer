@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -77,6 +78,16 @@ def print_section(title: str, lines: list[str]) -> None:
             typer.echo(f"  {line}")
 
 
+def changed_files(stored: Mapping[str, tuple[str | None, str]], on_disk: Mapping[str, Path]) -> list[str]:
+    """Registered files whose content differs from the version last processed, whatever the outcome
+    was (indexed, no text, failed or timed out). Pending files have no hash yet."""
+    return sorted(
+        rel
+        for rel, (digest, _) in stored.items()
+        if digest is not None and rel in on_disk and sha256(on_disk[rel]) != digest
+    )
+
+
 @app.command()
 def status() -> None:
     """Check the setup, and list every document that isn't indexed or has changed since."""
@@ -135,12 +146,7 @@ def status() -> None:
     print_section("No text layer, probably scanned (needs OCR)", [p.rel_path for p in by_status["no_text"]])
     print_section("Not registered yet (added after the last run)", sorted(set(on_disk) - set(stored)))
     print_section(
-        "Changed since indexed (re-extracted on the next run)",
-        sorted(
-            rel
-            for rel, (digest, state) in stored.items()
-            if state == "indexed" and rel in on_disk and sha256(on_disk[rel]) != digest
-        ),
+        "Changed since last processed (re-extracted on the next run)", changed_files(stored, on_disk)
     )
     print_section("In the database but no longer on disk", sorted(set(stored) - set(on_disk)))
 
