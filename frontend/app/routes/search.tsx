@@ -51,11 +51,25 @@ export default function Search({ loaderData }: Route.ComponentProps) {
         <div className="flex flex-wrap items-center gap-4 text-sm text-stone-600 dark:text-stone-400">
           <label className="flex items-center gap-2">
             Vuodesta
-            <input name="alkaen" type="number" inputMode="numeric" defaultValue={yearFrom} placeholder="2006" className={yearInput} />
+            <input
+              name="alkaen"
+              type="number"
+              inputMode="numeric"
+              defaultValue={yearFrom}
+              placeholder="2006"
+              className={yearInput}
+            />
           </label>
           <label className="flex items-center gap-2">
             vuoteen
-            <input name="asti" type="number" inputMode="numeric" defaultValue={yearTo} placeholder="2026" className={yearInput} />
+            <input
+              name="asti"
+              type="number"
+              inputMode="numeric"
+              defaultValue={yearTo}
+              placeholder="2026"
+              className={yearInput}
+            />
           </label>
           <label className="flex items-center gap-2">
             Järjestys
@@ -184,8 +198,13 @@ function ResultCard({ hit }: { hit: MeetingHit }) {
         ))}
         {text.map((chunk, i) => (
           <li key={`text-${i}`}>
-            <Link to={meetingUrl(chunk.page_no)} className="block text-sm text-stone-600 hover:underline dark:text-stone-400">
-              <span className="mr-2 text-xs text-stone-500">Pöytäkirjan teksti{chunk.page_no && `, s. ${chunk.page_no}`}:</span>
+            <Link
+              to={meetingUrl(chunk.page_no)}
+              className="block text-sm text-stone-600 hover:underline dark:text-stone-400"
+            >
+              <span className="mr-2 text-xs text-stone-500">
+                Pöytäkirjan teksti{chunk.page_no && `, s. ${chunk.page_no}`}:
+              </span>
               <Highlight text={chunk.snippet} />
             </Link>
           </li>

@@ -53,8 +53,8 @@ export default function Meetings({ loaderData }: Route.ComponentProps) {
                     </span>
                   </span>
                   <span className="text-sm text-stone-500">
-                    {formatDate(meeting.meeting_date)} · {meeting.topic_count} asiakohtaa, {meeting.decision_count}{" "}
-                    päätöstä
+                    {formatDate(meeting.meeting_date)} · {meeting.topic_count} asiakohtaa,{" "}
+                    {meeting.decision_count} päätöstä
                   </span>
                 </Link>
               </li>

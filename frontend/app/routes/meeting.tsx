@@ -22,7 +22,9 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 export default function Meeting({ loaderData }: Route.ComponentProps) {
   const [searchParams] = useSearchParams();
   // key: start fresh (page, selected item) when the URL changes, e.g. another search hit in the same meeting.
-  return <MeetingPage key={searchParams.toString()} meeting={loaderData.meeting} searchParams={searchParams} />;
+  return (
+    <MeetingPage key={searchParams.toString()} meeting={loaderData.meeting} searchParams={searchParams} />
+  );
 }
 
 function MeetingPage({ meeting, searchParams }: { meeting: MeetingView; searchParams: URLSearchParams }) {
@@ -93,8 +95,8 @@ function Details({
       </section>
 
       <p className="text-xs text-stone-500">
-        Tiedot on poimittu pöytäkirjasta automaattisesti ja voivat sisältää virheitä. Lähde on aina alkuperäinen
-        pöytäkirja.
+        Tiedot on poimittu pöytäkirjasta automaattisesti ja voivat sisältää virheitä. Lähde on aina
+        alkuperäinen pöytäkirja.
       </p>
     </div>
   );

@@ -15,3 +15,15 @@ repos:
         entry: uv run --project backend ruff format --check --config backend/pyproject.toml --force-exclude
         language: system
         types: [python]
+      - id: frontend-lint
+        name: eslint (frontend)
+        entry: pnpm --dir frontend lint
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+      - id: frontend-format
+        name: prettier (frontend)
+        entry: pnpm --dir frontend format:check
+        language: system
+        files: ^frontend/
+        pass_filenames: false
