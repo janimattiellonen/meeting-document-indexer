@@ -4,6 +4,8 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 
+import psycopg
+from psycopg.conninfo import conninfo_to_dict
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,7 +16,8 @@ LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", extra="ignore")
+    # hide_input_in_errors: a rejected DATABASE_URL may contain the password.
+    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", extra="ignore", hide_input_in_errors=True)
 
     database_url: str = "postgresql://meeting_indexer:meeting_indexer@127.0.0.1:5434/meeting_indexer"
     docs_root: Path = Path("data/documents")
@@ -32,13 +35,28 @@ class Settings(BaseSettings):
     def resolve_docs_root(cls, value: Path) -> Path:
         return value if value.is_absolute() else (REPO_ROOT / value).resolve()
 
-    @field_validator("ollama_host", "database_url")
+    # Document content is sent to both of these; they must never point off this machine.
+    # The error names only the host: the connection string may contain a password.
+
+    @field_validator("ollama_host")
     @classmethod
-    def must_be_local(cls, value: str) -> str:
-        # Document content is sent to both of these; it must never leave this machine.
+    def ollama_must_be_local(cls, value: str) -> str:
         host = urlparse(value if "://" in value else f"http://{value}").hostname
         if host not in LOCAL_HOSTS:
             raise ValueError(f"must point to this machine, got host {host!r}")
+        return value
+
+    @field_validator("database_url")
+    @classmethod
+    def database_must_be_local(cls, value: str) -> str:
+        # Accepts both libpq formats: "postgresql://user@host/db" and "host=... dbname=...".
+        try:
+            hosts = str(conninfo_to_dict(value).get("host") or "localhost").split(",")
+        except psycopg.ProgrammingError:
+            raise ValueError("is not a valid PostgreSQL connection string") from None
+        remote = [h for h in hosts if h not in LOCAL_HOSTS and not h.startswith("/")]  # "/…": a local socket
+        if remote:
+            raise ValueError(f"must point to this machine, got host {remote[0]!r}")
         return value
 
 

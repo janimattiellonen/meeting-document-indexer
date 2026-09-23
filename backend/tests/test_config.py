@@ -41,3 +41,26 @@ def test_remote_ollama_hosts_are_rejected(host: str) -> None:
 def test_remote_database_is_rejected() -> None:
     with pytest.raises(ValidationError, match="must point to this machine"):
         make(database_url="postgresql://u:p@db.example.com:5432/x")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql://u:p@127.0.0.1:5434/x",
+        "host=127.0.0.1 port=5434 dbname=x user=u password=p",
+        "host=/tmp dbname=x",
+        "dbname=x",
+    ],
+)
+def test_local_database_in_either_format_is_accepted(url: str) -> None:
+    assert make(database_url=url).database_url == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["host=db.example.com dbname=x password=secret123", "host=127.0.0.1,db.example.com dbname=x"],
+)
+def test_remote_database_in_key_value_format_is_rejected(url: str) -> None:
+    with pytest.raises(ValidationError, match=r"db\.example\.com") as error:
+        make(database_url=url)
+    assert "secret123" not in str(error.value)
