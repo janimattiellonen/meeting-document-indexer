@@ -3,16 +3,9 @@ import { Form, Link, useNavigation } from "react-router";
 import { api, type MeetingHit, orThrow } from "~/api/client";
 import { Highlight } from "~/components/Highlight";
 import { formatDate, meetingTypeLabel } from "~/lib/format";
+import { MAX_QUERY_LENGTH, parseSearch, SORTS } from "~/lib/search";
 
 import type { Route } from "./+types/search";
-
-const SORTS = { relevance: "Osuvin ensin", oldest: "Vanhin ensin", newest: "Uusin ensin" } as const;
-type Sort = keyof typeof SORTS;
-
-function parseYear(value: string | null): number | undefined {
-  const year = Number(value);
-  return value && Number.isInteger(year) && year >= 1900 && year <= 2999 ? year : undefined;
-}
 
 export function meta({ loaderData }: Route.MetaArgs) {
   return [{ title: loaderData?.q ? `${loaderData.q} – Pöytäkirjat` : "Haku – Pöytäkirjat" }];
@@ -20,11 +13,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
 
 // Search state lives in the URL (?q=…&alkaen=…), so every search can be bookmarked and shared.
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
-  const params = new URL(request.url).searchParams;
-  const q = params.get("q")?.trim() ?? "";
-  const sort: Sort = (params.get("jarjestys") as Sort) in SORTS ? (params.get("jarjestys") as Sort) : "relevance";
-  const yearFrom = parseYear(params.get("alkaen"));
-  const yearTo = parseYear(params.get("asti"));
+  const { q, sort, yearFrom, yearTo } = parseSearch(new URL(request.url).searchParams);
   if (!q) return { q, sort, yearFrom, yearTo, results: null };
 
   const response = await api.GET("/api/search", {
@@ -46,6 +35,7 @@ export default function Search({ loaderData }: Route.ComponentProps) {
             type="search"
             name="q"
             defaultValue={q}
+            maxLength={MAX_QUERY_LENGTH}
             placeholder="Hae pöytäkirjoista, esim. verkkosivut, t-paidat, kannettava"
             aria-label="Hakusanat"
             autoFocus

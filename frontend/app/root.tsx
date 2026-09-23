@@ -72,7 +72,9 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     details =
       error.status === 404
         ? "Sivua tai kokousta ei löytynyt."
-        : "Palvelin ei vastannut. Onko taustapalvelu käynnissä (`uv run mi serve`)?";
+        : error.status < 500
+          ? "Palvelin ei hyväksynyt pyyntöä. Tarkista hakusanat ja rajaukset."
+          : "Palvelin ei vastannut. Onko taustapalvelu käynnissä (`uv run mi serve`)?";
   } else if (import.meta.env.DEV && error instanceof Error) {
     details = error.message;
   }
