@@ -51,7 +51,7 @@ def problem_documents(conn: psycopg.Connection) -> list[ProblemDocument]:
     return [ProblemDocument(*row) for row in rows]
 
 
-def stored_hashes(conn: psycopg.Connection) -> dict[str, tuple[str | None, str]]:
+def stored_states(conn: psycopg.Connection) -> dict[str, tuple[str | None, str]]:
     """rel_path -> (sha256, status) of every registered document."""
     return {
         path: (digest, status)

@@ -98,7 +98,7 @@ def status() -> None:
         with db.connect() as conn:
             counts = db.document_counts(conn)
             problems = db.problem_documents(conn)
-            stored = db.stored_hashes(conn)
+            stored = db.stored_states(conn)
         summary = ", ".join(f"{s}: {n}" for s, n in sorted(counts.items())) or "no documents indexed yet"
         report(True, "database", summary)
     except Exception as e:

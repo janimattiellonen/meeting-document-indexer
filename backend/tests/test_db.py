@@ -33,7 +33,7 @@ def test_document_counts_groups_by_status(conn: psycopg.Connection) -> None:
 def test_register_pending_adds_only_new_files(conn: psycopg.Connection) -> None:
     assert db.register_pending(conn, [("a.pdf", "pdf"), ("b.doc", "doc")]) == 2
     assert db.register_pending(conn, [("a.pdf", "pdf"), ("c.pdf", "pdf")]) == 1
-    assert db.stored_hashes(conn) == {
+    assert db.stored_states(conn) == {
         "a.pdf": (None, "pending"),
         "b.doc": (None, "pending"),
         "c.pdf": (None, "pending"),
@@ -53,4 +53,4 @@ def test_nfc_migration_merges_a_path_stored_in_both_forms(conn: psycopg.Connecti
 
     conn.execute(up_section(MIGRATIONS / "20260923160000_nfc_document_paths.sql").encode())
 
-    assert db.stored_hashes(conn) == {nfc: ("x", "indexed"), "kevätkokous.pdf": ("y", "failed")}
+    assert db.stored_states(conn) == {nfc: ("x", "indexed"), "kevätkokous.pdf": ("y", "failed")}

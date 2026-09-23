@@ -343,7 +343,7 @@ def test_every_file_is_registered_before_processing_starts(
     seen: list[set[str]] = []
 
     def on_result(i: int, total: int, result) -> None:
-        seen.append({path for path, (_, status) in db.stored_hashes(conn).items() if status == "pending"})
+        seen.append({path for path, (_, status) in db.stored_states(conn).items() if status == "pending"})
 
     index_paths(conn, many, root, FakeAnalyzer(), MODEL, on_result=on_result)
 
