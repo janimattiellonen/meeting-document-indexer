@@ -5,3 +5,13 @@ repos:
         name: Block real meeting content
         entry: scripts/guard_commit.py
         language: script
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --project backend ruff check --config backend/pyproject.toml --force-exclude
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --project backend ruff format --check --config backend/pyproject.toml --force-exclude
+        language: system
+        types: [python]

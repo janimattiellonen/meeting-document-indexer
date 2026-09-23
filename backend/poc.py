@@ -15,8 +15,8 @@ import time
 from pathlib import Path
 
 import docx
-import pymupdf
 import ollama
+import pymupdf
 from pydantic import BaseModel, Field
 
 SUPPORTED = {".pdf", ".docx", ".doc", ".rtf", ".odt"}
@@ -66,7 +66,9 @@ def extract_text(path: Path) -> str:
     # .doc / .rtf / .odt: macOS built-in converter
     result = subprocess.run(
         ["textutil", "-convert", "txt", "-stdout", str(path)],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return result.stdout
 
@@ -104,13 +106,17 @@ def print_meeting(path: Path, m: Meeting) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("directory", type=Path)
     parser.add_argument("--model", default="qwen3.8:27b-mlx")
     parser.add_argument("--json", action="store_true", help="print results as JSON instead of text")
     args = parser.parse_args()
 
-    files = sorted(p for p in args.directory.rglob("*") if p.suffix.lower() in SUPPORTED and not p.name.startswith("~$"))
+    files = sorted(
+        p for p in args.directory.rglob("*") if p.suffix.lower() in SUPPORTED and not p.name.startswith("~$")
+    )
     if not files:
         sys.exit(f"No supported documents found in {args.directory}")
 

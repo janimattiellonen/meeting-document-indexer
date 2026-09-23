@@ -23,13 +23,16 @@ def test_absolute_docs_root_is_kept() -> None:
 
 
 @pytest.mark.parametrize(
-    "host", ["http://localhost:11434", "http://[::1]:11434", "http://host.docker.internal:11434", "127.0.0.1:11434"]
+    "host",
+    ["http://localhost:11434", "http://[::1]:11434", "http://host.docker.internal:11434", "127.0.0.1:11434"],
 )
 def test_local_ollama_hosts_are_accepted(host: str) -> None:
     assert make(ollama_host=host).ollama_host == host
 
 
-@pytest.mark.parametrize("host", ["http://192.168.1.10:11434", "https://ollama.example.com", "http://0.0.0.0:11434"])
+@pytest.mark.parametrize(
+    "host", ["http://192.168.1.10:11434", "https://ollama.example.com", "http://0.0.0.0:11434"]
+)
 def test_remote_ollama_hosts_are_rejected(host: str) -> None:
     with pytest.raises(ValidationError, match="must point to this machine"):
         make(ollama_host=host)
