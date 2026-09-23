@@ -103,8 +103,9 @@ function Intro() {
   return (
     <div className="max-w-2xl space-y-2 text-stone-600 dark:text-stone-400">
       <p>
-        Haku kohdistuu kokousten asiakohtiin, päätöksiin ja pöytäkirjojen tekstiin. Sanan alku riittää:{" "}
-        <em>verkko</em> löytää myös <em>verkkosivut</em>.
+        Haku kohdistuu kokousten asiakohtiin, päätöksiin ja pöytäkirjojen tekstiin. Taivutusmuodolla ei ole
+        väliä: <em>hallitus</em> löytää myös <em>hallituksen</em>, ja <em>kisa</em> myös{" "}
+        <em>seuramestaruuskisat</em>. Nimistä riittää alku.
       </p>
       <p>
         Tulokset ovat poimintoja; alkuperäinen pöytäkirja on aina lähde. Kaikki kokoukset löytyvät{" "}
@@ -121,7 +122,7 @@ function Results({ q, results }: { q: string; results: MeetingHit[] }) {
   if (results.length === 0) {
     return (
       <p className="text-stone-600 dark:text-stone-400">
-        Ei osumia haulle <strong>{q}</strong>. Kokeile lyhyempää sanan alkua tai toista taivutusmuotoa.
+        Ei osumia haulle <strong>{q}</strong>. Kokeile toista sanaa tai vähemmän hakusanoja.
       </p>
     );
   }
