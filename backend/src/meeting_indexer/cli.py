@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -10,13 +11,13 @@ import typer
 
 from meeting_indexer import db, evaluation
 from meeting_indexer.config import REPO_ROOT, get_settings
-from meeting_indexer.extract import discover
-from meeting_indexer.indexer import Result, index_paths
-from meeting_indexer.llm import Extractor
+from meeting_indexer.extract import discover, sha256
+from meeting_indexer.indexer import Result, RunStopped, TimeLimitedAnalyzer, index_paths
 
 app = typer.Typer(help="Index and search meeting minutes. Everything runs locally.", no_args_is_help=True)
 
 EVAL_DIR = REPO_ROOT / "data" / "eval"
+LOG_DIR = REPO_ROOT / "data" / "logs"
 
 Paths = Annotated[
     list[Path] | None,
@@ -25,13 +26,25 @@ Paths = Annotated[
 DocumentPath = Annotated[Path, typer.Argument(help="Document path, or its path relative to DOCS_ROOT")]
 
 
+# Written to the run's log file; on the console `mi index` prints its own lines instead.
+FILE_ONLY_LOGGERS = ("meeting_indexer.indexer", "meeting_indexer.run")
+
+
+class HideFileOnlyLogs(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.name.startswith(FILE_ONLY_LOGGERS)
+
+
 @app.callback()
 def main(
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Show detailed logging")] = False,
 ) -> None:
-    logging.basicConfig(
-        level=logging.INFO if verbose else logging.WARNING, format="%(levelname)s %(message)s"
-    )
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO if verbose else logging.WARNING)
+    console.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+    if not verbose:
+        console.addFilter(HideFileOnlyLogs())
+    logging.basicConfig(level=logging.WARNING, handlers=[console])
 
 
 def report(ok: bool, label: str, detail: str) -> None:
@@ -43,25 +56,46 @@ def has_model(available: set[str], name: str) -> bool:
     return name in available or f"{name}:latest" in available
 
 
+def ollama_responds(host: str) -> bool:
+    try:
+        ollama.Client(host=host, timeout=10).list()
+        return True
+    except Exception:
+        return False
+
+
+def format_duration(seconds: float) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m" if hours else f"{minutes}m {secs:02d}s"
+
+
+def print_section(title: str, lines: list[str]) -> None:
+    if lines:
+        typer.echo(f"\n{title} ({len(lines)}):")
+        for line in lines:
+            typer.echo(f"  {line}")
+
+
 @app.command()
 def status() -> None:
-    """Check the database, Ollama and the documents directory, and list problem documents."""
+    """Check the setup, and list every document that isn't indexed or has changed since."""
     settings = get_settings()
     healthy = True
-    problems: dict[str, list[tuple[str, str | None]]] = {}
 
     try:
         with db.connect() as conn:
             counts = db.document_counts(conn)
-            problems = {s: db.documents_with_status(conn, s) for s in ("failed", "no_text")}
+            problems = db.problem_documents(conn)
+            stored = db.stored_hashes(conn)
         summary = ", ".join(f"{s}: {n}" for s, n in sorted(counts.items())) or "no documents indexed yet"
         report(True, "database", summary)
     except Exception as e:
         report(False, "database", f"{e}".strip().splitlines()[0])
-        healthy = False
+        raise typer.Exit(1) from None
 
     try:
-        models = ollama.Client(host=settings.ollama_host).list().models
+        models = ollama.Client(host=settings.ollama_host, timeout=10).list().models
         available = {m.model for m in models if m.model}
         report(True, "ollama", settings.ollama_host)
         for role, name in (("llm", settings.llm_model), ("embeddings", settings.embed_model)):
@@ -72,21 +106,43 @@ def status() -> None:
         report(False, "ollama", f"{settings.ollama_host}: {e}")
         healthy = False
 
-    if settings.docs_root.is_dir():
-        count = sum(1 for _ in discover(settings.docs_root))
-        report(True, "documents", f"{count} files in {settings.docs_root}")
-    else:
+    if not settings.docs_root.is_dir():
         report(False, "documents", f"{settings.docs_root} does not exist")
-        healthy = False
+        raise typer.Exit(1)
+    on_disk = {p.relative_to(settings.docs_root).as_posix(): p for p in discover(settings.docs_root)}
+    report(True, "documents", f"{len(on_disk)} files in {settings.docs_root}")
 
-    if problems.get("failed"):
-        typer.echo("\nFailed (retried on the next `mi index`):")
-        for rel_path, error in problems["failed"]:
-            typer.echo(f"  {rel_path}: {error}")
-    if problems.get("no_text"):
-        typer.echo("\nNo text layer, probably scanned (needs OCR):")
-        for rel_path, _ in problems["no_text"]:
-            typer.echo(f"  {rel_path}")
+    def attempt(p: db.ProblemDocument) -> str:
+        when = p.last_attempt_at.astimezone().strftime("%Y-%m-%d %H:%M") if p.last_attempt_at else "never"
+        took = f", took {format_duration(p.duration_seconds)}" if p.duration_seconds else ""
+        return f"{p.attempts} attempt(s), last {when}{took}"
+
+    by_status = {
+        s: [p for p in problems if p.status == s] for s in ("pending", "timed_out", "failed", "no_text")
+    }
+    print_section(
+        "Never processed (pending): a run was stopped or hasn't reached them",
+        [p.rel_path for p in by_status["pending"]],
+    )
+    print_section(
+        "Timed out (retry with `mi index --retry-failed`)",
+        [f"{p.rel_path}: {attempt(p)}" for p in by_status["timed_out"]],
+    )
+    print_section(
+        "Failed (retry with `mi index --retry-failed`)",
+        [f"{p.rel_path}: {p.error} ({attempt(p)})" for p in by_status["failed"]],
+    )
+    print_section("No text layer, probably scanned (needs OCR)", [p.rel_path for p in by_status["no_text"]])
+    print_section("Not registered yet (added after the last run)", sorted(set(on_disk) - set(stored)))
+    print_section(
+        "Changed since indexed (re-extracted on the next run)",
+        sorted(
+            rel
+            for rel, (digest, state) in stored.items()
+            if state == "indexed" and rel in on_disk and sha256(on_disk[rel]) != digest
+        ),
+    )
+    print_section("In the database but no longer on disk", sorted(set(stored) - set(on_disk)))
 
     raise typer.Exit(0 if healthy else 1)
 
@@ -110,33 +166,60 @@ def rel_path_of(path: Path) -> str:
     return path.as_posix()
 
 
-def format_duration(seconds: float) -> str:
-    minutes, secs = divmod(int(seconds), 60)
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h {minutes:02d}m" if hours else f"{minutes}m {secs:02d}s"
+def start_run_log() -> Path:
+    """A log file for this run in data/logs/, with every document's outcome and full error details."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    path = LOG_DIR / f"index-{datetime.now():%Y%m%d-%H%M%S}.log"
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(handler)
+    logging.getLogger("meeting_indexer").setLevel(logging.INFO)
+    return path
 
 
-STATUS_COLORS = {"indexed": "green", "skipped": "bright_black", "no_text": "yellow", "failed": "red"}
+STATUS_COLORS = {
+    "indexed": "green",
+    "skipped": "bright_black",
+    "no_text": "yellow",
+    "failed": "red",
+    "timed_out": "red",
+}
 
 
-def run_index(paths: list[Path] | None, force: bool) -> None:
+def run_index(paths: list[Path] | None, force: bool, retry_failed: bool, time_limit: int | None) -> None:
     settings = get_settings()
     files = resolve_targets(paths, settings.docs_root)
     if not files:
         typer.echo(f"No supported documents found in {settings.docs_root}")
         raise typer.Exit(1)
 
-    extractor = Extractor(settings.ollama_host, settings.llm_model)
-    llm_seconds: list[float] = []
+    limit = time_limit or settings.doc_time_limit_seconds
+    log_path = start_run_log()
+    log = logging.getLogger("meeting_indexer.run")
+    log.info("run started: %d files, time limit %d s per document", len(files), limit)
+    typer.echo(f"{len(files)} files, time limit {format_duration(limit)} per document. Log: {log_path}\n")
+
+    analyzer = TimeLimitedAnalyzer(settings.ollama_host, settings.llm_model, limit)
+    processed_seconds: list[float] = []
 
     def on_result(i: int, total: int, result: Result) -> None:
-        status = typer.style(f"{result.status:<8}", fg=STATUS_COLORS[result.status])
+        log.info(
+            "[%d/%d] %s %s %.0fs %s",
+            i,
+            total,
+            result.status,
+            result.rel_path,
+            result.seconds,
+            result.error or "",
+        )
+        status = typer.style(f"{result.status:<9}", fg=STATUS_COLORS[result.status])
         line = f"[{i}/{total}] {status} {result.rel_path}"
-        if result.status == "indexed":
-            llm_seconds.append(result.seconds)
+        if result.status != "skipped":
+            processed_seconds.append(result.seconds)
             line += f"  {result.seconds:.0f}s"
             if i < total:
-                remaining = (total - i) * sum(llm_seconds) / len(llm_seconds)
+                remaining = (total - i) * sum(processed_seconds) / len(processed_seconds)
                 line += f", at most ~{format_duration(remaining)} left"
         typer.echo(line)
         for warning in result.warnings:
@@ -144,31 +227,72 @@ def run_index(paths: list[Path] | None, force: bool) -> None:
         if result.error:
             typer.echo(typer.style(f"      {result.error}", fg="red"))
 
+    stopped: RunStopped | None = None
     with db.connect() as conn:
-        results = index_paths(
-            conn, files, settings.docs_root, extractor, settings.llm_model, force=force, on_result=on_result
-        )
+        try:
+            results = index_paths(
+                conn,
+                files,
+                settings.docs_root,
+                analyzer,
+                settings.llm_model,
+                force=force,
+                retry_failed=retry_failed,
+                max_consecutive_failures=settings.max_consecutive_failures,
+                service_available=lambda: ollama_responds(settings.ollama_host),
+                on_result=on_result,
+            )
+        except RunStopped as e:
+            stopped, results = e, e.results
 
     totals = {s: sum(1 for r in results if r.status == s) for s in STATUS_COLORS}
-    typer.echo("\n" + ", ".join(f"{s}: {n}" for s, n in totals.items()))
-    raise typer.Exit(1 if totals["failed"] else 0)
+    summary = ", ".join(f"{s}: {n}" for s, n in totals.items())
+    log.info("run finished: %s", summary)
+    typer.echo("\n" + summary)
+    if stopped:
+        not_reached = files[len(results) :]
+        log.error("run stopped: %s; %d documents not reached:", stopped, len(not_reached))
+        for path in not_reached:
+            log.error("  not reached: %s", path.relative_to(settings.docs_root).as_posix())
+        typer.echo(
+            typer.style(f"\nRun stopped: {stopped}.", fg="red")
+            + f" {len(not_reached)} documents were not reached (listed in the log). New ones are pending"
+            " in `mi status`; the others keep their earlier result."
+        )
+        raise typer.Exit(2)
+    if totals["failed"] or totals["timed_out"]:
+        typer.echo("See `mi status` for the documents that failed or timed out, and the log for details.")
+        raise typer.Exit(1)
+
+
+RetryFailed = Annotated[
+    bool,
+    typer.Option(help="Also retry documents that failed or timed out before (they're skipped otherwise)"),
+]
+TimeLimit = Annotated[
+    int | None,
+    typer.Option(help="Seconds allowed per document (default DOC_TIME_LIMIT_SECONDS, 600)", min=10),
+]
 
 
 @app.command()
 def index(
     paths: Paths = None,
     force: Annotated[bool, typer.Option(help="Re-extract even if the file hasn't changed")] = False,
+    retry_failed: RetryFailed = False,
+    time_limit: TimeLimit = None,
 ) -> None:
     """Extract meeting data from new and changed documents into the database."""
-    run_index(paths, force)
+    run_index(paths, force, retry_failed, time_limit)
 
 
 @app.command()
 def reindex(
     paths: Annotated[list[Path], typer.Argument(help="Files or directories under DOCS_ROOT")],
+    time_limit: TimeLimit = None,
 ) -> None:
     """Re-extract the given documents even if they haven't changed."""
-    run_index(paths, force=True)
+    run_index(paths, force=True, retry_failed=True, time_limit=time_limit)
 
 
 @app.command()
