@@ -120,6 +120,7 @@ def search(
         "year_to": year_to,
         "meeting_type": meeting_type,
     }
+    matches = tsquery(words)
 
     topic_rows = conn.execute(
         sql.SQL(f"""
@@ -135,7 +136,7 @@ def search(
              (SELECT {{query}} AS q) AS search_query
         WHERE t.search_tsv @@ q {FILTERS}
         ORDER BY t.meeting_id, t.ordinal
-        """).format(query=tsquery(words)),
+        """).format(query=matches),
         params,
     ).fetchall()
 
@@ -148,7 +149,7 @@ def search(
              (SELECT {{query}} AS q) AS search_query
         WHERE c.search_tsv @@ q {FILTERS}
         ORDER BY m.id, c.ordinal
-        """).format(query=tsquery(words)),
+        """).format(query=matches),
         params,
     ).fetchall()
 
