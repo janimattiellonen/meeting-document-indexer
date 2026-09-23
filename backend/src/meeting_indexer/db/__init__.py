@@ -114,15 +114,19 @@ def record_failure(
     error: str,
     duration_seconds: float,
 ) -> None:
-    """Mark a failed or timed-out attempt. Any earlier extraction of the document is kept."""
+    """Mark a failed or timed-out attempt, counted by start_attempt. Any earlier extraction is kept.
+
+    sha256 is the hash of the file that failed, so it is retried when the file changes but not on every
+    run. When the file couldn't even be hashed (sha256 None), the stored hash is kept.
+    """
     conn.execute(
         """
         INSERT INTO documents (rel_path, file_type, sha256, status, error, duration_seconds,
                                attempts, last_attempt_at)
         VALUES (%(rel_path)s, %(file_type)s, %(sha256)s, %(status)s, %(error)s, %(duration)s, 1, now())
         ON CONFLICT (rel_path) DO UPDATE SET
-            sha256 = EXCLUDED.sha256, status = EXCLUDED.status, error = EXCLUDED.error,
-            duration_seconds = EXCLUDED.duration_seconds, updated_at = now()
+            sha256 = coalesce(EXCLUDED.sha256, documents.sha256), status = EXCLUDED.status,
+            error = EXCLUDED.error, duration_seconds = EXCLUDED.duration_seconds, updated_at = now()
         """,
         {
             "rel_path": rel_path,

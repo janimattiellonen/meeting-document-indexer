@@ -255,6 +255,47 @@ def test_unreadable_file_is_recorded_as_failed(conn: psycopg.Connection, root: P
     assert status_of(conn, "broken.pdf") == ("failed", 1, True)
 
 
+def test_failure_before_the_file_is_read_counts_as_an_attempt(conn: psycopg.Connection, root: Path) -> None:
+    locked = write_pdf(root / "lukittu.pdf", [PAGE_1])
+    db.register_pending(conn, [("lukittu.pdf", "pdf")])  # as index_paths does before processing
+    locked.chmod(0)
+    try:
+        result = index_file(conn, locked, root, FakeAnalyzer(), MODEL)
+    finally:
+        locked.chmod(0o644)
+
+    assert result.status == "failed"
+    assert status_of(conn, "lukittu.pdf") == ("failed", 1, True)
+    [problem] = db.problem_documents(conn)
+    assert problem.last_attempt_at is not None
+
+
+def test_failure_to_hash_keeps_the_stored_hash(conn: psycopg.Connection, root: Path, minutes: Path) -> None:
+    index_file(conn, minutes, root, FakeAnalyzer(), MODEL)
+    before = db.get_document(conn, "2019/hallitus-3-2019.pdf")
+    minutes.chmod(0)
+    try:
+        index_file(conn, minutes, root, FakeAnalyzer(), MODEL, force=True)
+    finally:
+        minutes.chmod(0o644)
+
+    after = db.get_document(conn, "2019/hallitus-3-2019.pdf")
+    assert before is not None and after is not None
+    assert (after.status, after.sha256) == ("failed", before.sha256)
+
+
+def test_changed_file_that_fails_is_not_retried_on_every_run(
+    conn: psycopg.Connection, root: Path, minutes: Path
+) -> None:
+    # The stored hash is the one of the failed attempt; the old one would retry the file on every run.
+    index_file(conn, minutes, root, FakeAnalyzer(), MODEL)
+    write_pdf(minutes, [PAGE_1, PAGE_2 + "\nKorjattu."])
+    index_file(conn, minutes, root, FakeAnalyzer(error=RuntimeError("broken")), MODEL)
+
+    assert index_file(conn, minutes, root, FakeAnalyzer(), MODEL).status == "skipped"
+    assert db.load_meeting(conn, "2019/hallitus-3-2019.pdf") is not None
+
+
 def test_one_failing_document_does_not_stop_the_run(
     conn: psycopg.Connection, root: Path, many: list[Path]
 ) -> None:

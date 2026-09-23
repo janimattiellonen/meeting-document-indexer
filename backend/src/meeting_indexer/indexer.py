@@ -103,12 +103,14 @@ def index_file(
     file_type = path.suffix.lower().lstrip(".")
     started = time.monotonic()
     digest: str | None = None
+    attempt_started = False
 
     try:
         digest = sha256(path)
         if not force and should_skip(db.get_document(conn, rel_path), digest, model, retry_failed):
             return Result(rel_path, "skipped")
         db.start_attempt(conn, rel_path, file_type)
+        attempt_started = True
 
         analysis = analyze(path)  # the slow part; no transaction is held while it runs
         seconds = time.monotonic() - started
@@ -134,7 +136,7 @@ def index_file(
 
     except TimeLimitExceeded as e:
         log.warning("%s timed out after %.0f s: %s", rel_path, time.monotonic() - started, e)
-        return _failed(conn, rel_path, file_type, digest, "timed_out", str(e), started)
+        return _failed(conn, rel_path, file_type, digest, "timed_out", str(e), started, attempt_started)
     except Exception as e:
         # Errors raised in the worker process carry its traceback as text; others have their own.
         details = getattr(e, "worker_traceback", None)
@@ -146,7 +148,8 @@ def index_file(
             f"\n{details}" if details else "",
             exc_info=None if details else e,
         )
-        return _failed(conn, rel_path, file_type, digest, "failed", f"{type(e).__name__}: {e}", started)
+        error = f"{type(e).__name__}: {e}"
+        return _failed(conn, rel_path, file_type, digest, "failed", error, started, attempt_started)
 
 
 def _failed(
@@ -157,8 +160,11 @@ def _failed(
     status: str,
     error: str,
     started: float,
+    attempt_started: bool,
 ) -> Result:
     seconds = time.monotonic() - started
+    if not attempt_started:  # failed before the attempt was counted, e.g. the file couldn't be read
+        db.start_attempt(conn, rel_path, file_type)
     db.record_failure(
         conn,
         rel_path=rel_path,
