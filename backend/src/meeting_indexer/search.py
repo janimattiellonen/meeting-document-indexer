@@ -4,6 +4,8 @@ Each query word is matched as a prefix in two forms, OR'ed together:
 - stemmed by Postgres' `finnish` configuration ("junioreiden" -> junior:*), and
 - as typed ("verkko" -> verkko:*). The stemmer turns "verkko" into "verko", which is not a prefix of
   "verkkosivut", so the stemmed form alone would miss it.
+All words must match, except Finnish stopwords ("ja", "on"), which the index leaves out and the query
+drops.
 The Snowball stemmer still misses stem changes such as hallitus/hallituksen; Voikko lemmatisation is
 the planned fix (docs/PLAN.md §8).
 """
@@ -37,6 +39,19 @@ def search_words(query: str) -> list[str]:
     """The searchable words of a query: letters, digits and inner hyphens, at least two characters."""
     words = [w.strip("-_") for w in WORD.findall(query)]
     return [w for w in words if len(w) >= 2]
+
+
+def drop_stopwords(conn: psycopg.Connection, words: list[str]) -> list[str]:
+    """Words the `finnish` configuration keeps. Stopwords such as "ja" are left out of the index, so
+    requiring one would make the whole query match nothing."""
+    rows = conn.execute(
+        """
+        SELECT w FROM unnest(%s::text[]) WITH ORDINALITY AS u(w, i)
+        WHERE to_tsvector('finnish', w) <> ''::tsvector ORDER BY i
+        """,
+        (words,),
+    ).fetchall()
+    return [w for (w,) in rows]
 
 
 def tsquery(words: list[str]) -> sql.Composable:
@@ -94,7 +109,7 @@ def search(
     meeting_type: str | None = None,
     sort: Sort = "relevance",
 ) -> list[MeetingHit]:
-    words = search_words(query)
+    words = drop_stopwords(conn, search_words(query))
     if not words:
         return []
     params = {

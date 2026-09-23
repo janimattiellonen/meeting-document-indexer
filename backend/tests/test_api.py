@@ -74,6 +74,16 @@ def test_search_falls_back_to_the_document_text(client: TestClient, indexed: Non
     assert result["text"][0]["page_no"] == 1
 
 
+def test_stopwords_in_the_query_are_ignored(client: TestClient, indexed: None) -> None:
+    # The Finnish index leaves out words such as "ja"; requiring them would match nothing.
+    results = client.get("/api/search", params={"q": "verkkosivut ja"}).json()["results"]
+    assert len(results) == 2
+
+
+def test_a_query_of_only_stopwords_gives_no_results(client: TestClient, indexed: None) -> None:
+    assert client.get("/api/search", params={"q": "ja on"}).json()["results"] == []
+
+
 @pytest.mark.parametrize("query", ["!!", "a", "   "])
 def test_nothing_searchable_gives_no_results(client: TestClient, indexed: None, query: str) -> None:
     assert client.get("/api/search", params={"q": query}).json()["results"] == []
