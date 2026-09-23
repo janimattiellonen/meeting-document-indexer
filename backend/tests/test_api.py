@@ -66,6 +66,23 @@ def test_search_filters_by_year_and_sorts_by_date(client: TestClient, indexed: N
     assert [r["meeting_date"] for r in oldest["results"]] == ["2019-04-02", "2021-09-01"]
 
 
+@pytest.mark.parametrize(
+    ("sort", "expected"),
+    [("oldest", ["2019-04-02", "2021-09-01", None]), ("newest", ["2021-09-01", "2019-04-02", None])],
+)
+def test_meetings_without_a_date_come_last_in_date_order(
+    client: TestClient, conn: psycopg.Connection, root: Path, indexed: None, sort: str, expected: list
+) -> None:
+    undated = fake_meeting(title="Hallituksen kokous", date=None)
+    # No date anywhere in the text either, so the indexer can't fill one in.
+    write_pdf(root / "undated.pdf", ["Hallituksen kokous\n2. Seuran verkkosivut", PAGE_2])
+    index_file(conn, root / "undated.pdf", root, FakeAnalyzer(undated), MODEL)
+
+    results = client.get("/api/search", params={"q": "verkkosivut", "sort": sort}).json()["results"]
+
+    assert [r["meeting_date"] for r in results] == expected
+
+
 def test_search_falls_back_to_the_document_text(client: TestClient, indexed: None) -> None:
     # "Seuratalo" is only in the raw text, not in any agenda item.
     [result] = client.get("/api/search", params={"q": "seuratalo", "year_to": 2019}).json()["results"]

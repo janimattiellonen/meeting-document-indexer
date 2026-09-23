@@ -192,5 +192,7 @@ def search(
     if sort == "relevance":
         hits.sort(key=lambda h: (-h.score, h.meeting_date or date.min))
     else:
-        hits.sort(key=lambda h: h.meeting_date or date.min, reverse=sort == "newest")
+        dated = sorted((h for h in hits if h.meeting_date), key=lambda h: h.meeting_date or date.min)
+        # Meetings without a date come last in both orders: they can't answer "when did this come up".
+        hits = (dated[::-1] if sort == "newest" else dated) + [h for h in hits if not h.meeting_date]
     return hits[:MAX_MEETINGS]
