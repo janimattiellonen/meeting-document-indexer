@@ -85,7 +85,7 @@ What this means for the plan:
                        │     │                     └──► PostgreSQL 17 + pgvector (Docker)   │
                        │     │ /api (JSON)               127.0.0.1:5434                      │
                        │     │                                                              │
-                       │   React Router 7 SPA (TypeScript) ◄── browser                      │
+                       │   React Router 8 SPA (TypeScript) ◄── browser                      │
                        └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -93,7 +93,7 @@ What this means for the plan:
   normalisation, so a query is always embedded exactly like the indexed content.
 - **Ollama runs natively**, because Docker on macOS has no GPU access (MLX would fall back to CPU).
   Containers reach it through `host.docker.internal:11434`.
-- **The frontend is a static SPA** (React Router 7, `ssr: false`) that talks only to the API.
+- **The frontend is a static SPA** (React Router 8, `ssr: false`) that talks only to the API.
 
 ---
 
@@ -110,7 +110,7 @@ What this means for the plan:
 | Backend | Python 3.13, `uv`, FastAPI, `psycopg` 3, Pydantic v2 | Hand-written SQL; search queries are too specific for an ORM |
 | Document text | PyMuPDF, python-docx, macOS `textutil` (.doc/.rtf/.odt) | OCR later with `ocrmypdf` |
 | CLI | `typer` | `mi index`, `mi status`, … |
-| Frontend | React Router 7 (SPA mode), TypeScript strict, Vite, Tailwind, shadcn/ui | Finnish UI |
+| Frontend | React Router 8 (SPA mode), TypeScript strict, Vite, Tailwind, shadcn/ui | Finnish UI |
 | API types | `openapi-typescript` + `openapi-fetch` | Types generated from FastAPI's OpenAPI schema |
 | Quality | ruff, pyright, pytest · ESLint, Prettier, Vitest, Testing Library | |
 
@@ -141,7 +141,7 @@ meeting-indexer/
 │   │   ├── cli.py               # typer app: `mi …`
 │   │   └── api/                 # FastAPI app and routers
 │   └── tests/
-├── frontend/                    # React Router 7 SPA
+├── frontend/                    # React Router 8 SPA
 │   └── app/
 │       ├── routes/
 │       ├── api/                 # generated schema.d.ts + openapi-fetch client
@@ -395,7 +395,7 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 
 ---
 
-## 10. Frontend (React Router 7 SPA)
+## 10. Frontend (React Router 8 SPA)
 
 | Route | Content |
 |---|---|
