@@ -1,6 +1,7 @@
 """The indexing pipeline against a real test database, with the LLM replaced by a fake."""
 
 import time
+import unicodedata
 from datetime import date
 from pathlib import Path
 
@@ -347,3 +348,16 @@ def test_person_listed_twice_gives_a_warning(conn: psycopg.Connection, root: Pat
 
     assert result.status == "indexed"
     assert any("more than once" in w for w in result.warnings)
+
+
+def test_file_name_with_decomposed_umlaut_is_found_by_the_typed_name(
+    conn: psycopg.Connection, root: Path
+) -> None:
+    # macOS can keep "ö" in a file name as "o" + combining diaeresis (NFD); users type the single "ö".
+    decomposed = unicodedata.normalize("NFD", "pöytäkirja 2_2026.pdf")
+    path = write_pdf(root / decomposed, [PAGE_1, PAGE_2])
+
+    index_file(conn, path, root, FakeAnalyzer(), MODEL)
+
+    assert db.load_meeting(conn, "pöytäkirja 2_2026.pdf") is not None
+    assert db.get_document(conn, decomposed) is None  # stored in one form only

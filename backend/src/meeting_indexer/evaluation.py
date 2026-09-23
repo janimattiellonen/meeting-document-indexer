@@ -17,6 +17,7 @@ from pathlib import Path
 import psycopg
 
 from meeting_indexer import db
+from meeting_indexer.extract import normalize_path
 
 TOPIC_MATCH_RATIO = 0.8
 
@@ -75,7 +76,7 @@ def load_golden(directory: Path) -> list[dict]:
 
 
 def evaluate(conn: psycopg.Connection, directory: Path) -> list[DocumentScore]:
-    return [score(g, db.load_meeting(conn, g["rel_path"])) for g in load_golden(directory)]
+    return [score(g, db.load_meeting(conn, normalize_path(g["rel_path"]))) for g in load_golden(directory)]
 
 
 def golden_draft(meeting: db.MeetingView, rel_path: str) -> dict:

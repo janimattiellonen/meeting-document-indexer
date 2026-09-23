@@ -3,6 +3,7 @@
 import hashlib
 import shutil
 import subprocess
+import unicodedata
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -28,6 +29,17 @@ def discover(root: Path) -> Iterator[Path]:
             and not path.name.startswith(("~$", "."))
         ):
             yield path
+
+
+def normalize_path(rel_path: str) -> str:
+    """One Unicode form (NFC) for paths. macOS may store "ö" in a file name as "o" plus a combining
+    diaeresis (NFD); it looks the same but compares differently from the "ö" someone types."""
+    return unicodedata.normalize("NFC", rel_path)
+
+
+def relative_path(path: Path, root: Path) -> str:
+    """The path as stored in the database: relative to root, "/"-separated, NFC-normalized."""
+    return normalize_path(path.resolve().relative_to(root.resolve()).as_posix())
 
 
 def sha256(path: Path) -> str:

@@ -11,7 +11,7 @@ import typer
 
 from meeting_indexer import db, evaluation
 from meeting_indexer.config import REPO_ROOT, get_settings
-from meeting_indexer.extract import discover, sha256
+from meeting_indexer.extract import discover, normalize_path, relative_path, sha256
 from meeting_indexer.indexer import Result, RunStopped, TimeLimitedAnalyzer, index_paths
 
 app = typer.Typer(help="Index and search meeting minutes. Everything runs locally.", no_args_is_help=True)
@@ -109,7 +109,7 @@ def status() -> None:
     if not settings.docs_root.is_dir():
         report(False, "documents", f"{settings.docs_root} does not exist")
         raise typer.Exit(1)
-    on_disk = {p.relative_to(settings.docs_root).as_posix(): p for p in discover(settings.docs_root)}
+    on_disk = {relative_path(p, settings.docs_root): p for p in discover(settings.docs_root)}
     report(True, "documents", f"{len(on_disk)} files in {settings.docs_root}")
 
     def attempt(p: db.ProblemDocument) -> str:
@@ -162,8 +162,8 @@ def resolve_targets(paths: list[Path] | None, root: Path) -> list[Path]:
 def rel_path_of(path: Path) -> str:
     """Accepts a path to an existing file, or a path already relative to DOCS_ROOT."""
     if path.exists():
-        return path.resolve().relative_to(get_settings().docs_root).as_posix()
-    return path.as_posix()
+        return relative_path(path, get_settings().docs_root)
+    return normalize_path(path.as_posix())
 
 
 def start_run_log() -> Path:
@@ -253,7 +253,7 @@ def run_index(paths: list[Path] | None, force: bool, retry_failed: bool, time_li
         not_reached = files[len(results) :]
         log.error("run stopped: %s; %d documents not reached:", stopped, len(not_reached))
         for path in not_reached:
-            log.error("  not reached: %s", path.relative_to(settings.docs_root).as_posix())
+            log.error("  not reached: %s", relative_path(path, settings.docs_root))
         typer.echo(
             typer.style(f"\nRun stopped: {stopped}.", fg="red")
             + f" {len(not_reached)} documents were not reached (listed in the log). New ones are pending"

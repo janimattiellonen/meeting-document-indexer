@@ -14,7 +14,7 @@ from pathlib import Path
 import psycopg
 
 from meeting_indexer import db
-from meeting_indexer.extract import extract_pages, has_text, sha256
+from meeting_indexer.extract import extract_pages, has_text, relative_path, sha256
 from meeting_indexer.limits import TimeLimitExceeded, run_with_time_limit
 from meeting_indexer.llm import EXTRACTOR_VERSION, Extractor, Meeting
 from meeting_indexer.normalize import (
@@ -99,7 +99,7 @@ def index_file(
     retry_failed: bool = False,
     today: date | None = None,
 ) -> Result:
-    rel_path = path.resolve().relative_to(root.resolve()).as_posix()
+    rel_path = relative_path(path, root)
     file_type = path.suffix.lower().lstrip(".")
     started = time.monotonic()
     digest: str | None = None
@@ -257,10 +257,7 @@ def index_paths(
     responding, or several documents in a row failing, which points at the system, not the files.
     Documents it doesn't reach stay registered as pending, so `mi status` shows them.
     """
-    root = root.resolve()
-    db.register_pending(
-        conn, [(p.resolve().relative_to(root).as_posix(), p.suffix.lower()[1:]) for p in paths]
-    )
+    db.register_pending(conn, [(relative_path(p, root), p.suffix.lower()[1:]) for p in paths])
     results: list[Result] = []
     consecutive_failures = 0
     for i, path in enumerate(paths, 1):
