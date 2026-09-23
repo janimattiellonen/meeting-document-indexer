@@ -18,8 +18,9 @@ from typing import Literal
 import psycopg
 from psycopg import sql
 
-# Highlight markers in snippets. Control characters can't occur in document text, and the frontend
-# splits on them and renders plain text, so nothing from a document is ever rendered as HTML.
+# Highlight markers in snippets. The frontend splits on them and renders plain text, so nothing from a
+# document is ever rendered as HTML. Extraction doesn't strip these control characters, but text rarely
+# contains them; if a document did, the worst case is a wrongly highlighted span.
 MARK_START, MARK_END = "\x02", "\x03"
 HEADLINE = (
     f'StartSel="{MARK_START}", StopSel="{MARK_END}", MaxFragments=2, MinWords=6, MaxWords=24, '
