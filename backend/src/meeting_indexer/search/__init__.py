@@ -12,7 +12,6 @@ If Voikko can't be loaded, the base-form alternative is left out and the two pre
 """
 
 import logging
-import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal
@@ -30,7 +29,6 @@ MARK_START, MARK_END = highlight.MARK_START, highlight.MARK_END
 
 log = logging.getLogger(__name__)
 
-WORD = re.compile(r"[\w-]+")
 MAX_MEETINGS = 50
 # A match in the raw text counts less than one in an agenda item's title, decision or description.
 CHUNK_WEIGHT = 0.5
@@ -39,8 +37,11 @@ Sort = Literal["relevance", "newest", "oldest"]
 
 
 def search_words(query: str) -> list[str]:
-    """The searchable words of a query: letters, digits and inner hyphens, at least two characters."""
-    words = [w.strip("-_") for w in WORD.findall(query)]
+    """The searchable words of a query: letters, digits and inner hyphens, at least two characters.
+
+    Split the way highlight.py splits the text it marks (lemmas.WORD).
+    """
+    words = [w.strip("_") for w in lemmas.words(query)]
     return [w for w in words if len(w) >= 2]
 
 

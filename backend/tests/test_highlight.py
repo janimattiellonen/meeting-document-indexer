@@ -1,3 +1,4 @@
+from meeting_indexer.search import search_words
 from meeting_indexer.search.highlight import MARK_END, MARK_START, Query, fragments, mark_all
 
 
@@ -65,3 +66,7 @@ def test_excerpts_close_to_each_other_do_not_repeat_words() -> None:
     shown_words = [w for w in result.split() if w != "…"]
     assert len(shown_words) == len(set(shown_words) - {"[hallitus]"}) + 2
     assert result.count("[hallitus]") == 2
+
+
+def test_queries_are_split_into_words_the_way_highlighted_text_is() -> None:
+    assert search_words("t-paita, --kisa_ hallitus--kokous a") == ["t-paita", "kisa", "hallitus", "kokous"]
