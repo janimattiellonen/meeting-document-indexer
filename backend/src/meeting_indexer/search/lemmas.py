@@ -49,6 +49,15 @@ def check_available() -> None:
     _analyze("kokous")
 
 
+def available() -> bool:
+    """Whether Voikko can be loaded. Search uses this to fall back to prefix matching without it."""
+    try:
+        check_available()
+    except VoikkoUnavailable:
+        return False
+    return True
+
+
 @lru_cache(maxsize=200_000)
 def analyses(word: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """(base forms, compound parts) of one word, lowercased. Unknown words give ((word,), ())."""

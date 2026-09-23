@@ -12,7 +12,7 @@ from meeting_indexer.api import create_app
 from meeting_indexer.config import Settings
 from meeting_indexer.indexer import index_file
 from meeting_indexer.llm import Topic
-from meeting_indexer.search import MARK_END, MARK_START
+from meeting_indexer.search import MARK_END, MARK_START, lemmas
 
 
 @pytest.fixture
@@ -185,3 +185,20 @@ def test_search_matches_agenda_item_titles_in_any_form(client: TestClient, index
     results = client.get("/api/search", params={"q": "kokous", "year_to": 2019}).json()["results"]
     titles = [t["title"] for t in results[0]["topics"]]
     assert f"{MARK_START}Kokouksen{MARK_END} avaus" in titles
+
+
+def test_search_without_voikko_still_matches_by_prefix(
+    client: TestClient, indexed: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unavailable(word: str) -> list[dict[str, str]]:
+        raise lemmas.VoikkoUnavailable("Voikko is not available (test).")
+
+    monkeypatch.setattr(lemmas, "_analyze", unavailable)
+    lemmas.analyses.cache_clear()
+
+    response = client.get("/api/search", params={"q": "verkko"})
+
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 2
+    assert f"{MARK_START}verkkosivut{MARK_END}" in results[0]["topics"][0]["title"]

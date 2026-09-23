@@ -386,6 +386,9 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
   - **Storage:** `topics.lemma_tsv` and `chunks.lemma_tsv` (`simple` config, the same weights as
     `search_tsv`), filled by the indexer, and by `mi relemmatize` for text stored earlier.
     Searches run against `search_tsv || lemma_tsv`, with a GIN index on that expression.
+  - **Without Voikko** the API keeps working: search logs a warning, leaves out the base-form
+    alternative and matches by the two prefix ways only. Indexing (`mi index`, `mi reindex`) and
+    `mi relemmatize` refuse to start instead, since they would store text without base forms.
   - **Highlighting** is done in Python (`search/highlight.py`) with the same rules, because
     `ts_headline` only knows Postgres' stemming and wouldn't mark *hallituksen* for *hallitus*.
   - **Tested on the 4 real documents:** *hallitus*, *kokous* and *kisa* each went from 0 to 4

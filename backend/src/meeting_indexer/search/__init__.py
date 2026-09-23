@@ -8,8 +8,10 @@ Each query word matches in any of three ways, OR'ed together:
   doesn't know, such as names.
 All words must match, except Finnish stopwords ("ja", "on"), which the index leaves out and the query
 drops. Matches are marked by highlight.py, which follows the same rules.
+If Voikko can't be loaded, the base-form alternative is left out and the two prefix ways still match.
 """
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -25,6 +27,8 @@ from meeting_indexer.search import highlight, lemmas
 # document is ever rendered as HTML. Extraction doesn't strip these control characters, but text rarely
 # contains them; if a document did, the worst case is a wrongly highlighted span.
 MARK_START, MARK_END = highlight.MARK_START, highlight.MARK_END
+
+log = logging.getLogger(__name__)
 
 WORD = re.compile(r"[\w-]+")
 MAX_MEETINGS = 50
@@ -53,11 +57,11 @@ def drop_stopwords(conn: psycopg.Connection, words: list[str]) -> list[str]:
     return [w for (w,) in rows]
 
 
-def tsquery(words: list[str]) -> sql.Composable:
+def tsquery(words: list[str], *, base_forms: bool = True) -> sql.Composable:
     """All words must match; each one by a base form, or as a stemmed or an unstemmed prefix.
 
     Searched against `search_tsv || lemma_tsv`: prefixes match the stemmed lexemes of search_tsv and the
-    base forms of lemma_tsv alike.
+    base forms of lemma_tsv alike. base_forms=False leaves out the Voikko alternative.
     """
     return sql.SQL(" && ").join(
         sql.SQL("({alternatives})").format(
@@ -67,7 +71,7 @@ def tsquery(words: list[str]) -> sql.Composable:
                     sql.SQL("to_tsquery('simple', {p})").format(p=sql.Literal(f"{word}:*")),
                     *(
                         sql.SQL("plainto_tsquery('simple', {f})").format(f=sql.Literal(form))
-                        for form in lemmas.query_forms(word)
+                        for form in (lemmas.query_forms(word) if base_forms else ())
                     ),
                 ]
             )
@@ -135,7 +139,12 @@ def search(
         "year_to": year_to,
         "meeting_type": meeting_type,
     }
-    matches = tsquery(words)
+    base_forms = lemmas.available()
+    if not base_forms:
+        log.warning(
+            "Voikko is not available; searching by prefix only. Install it with `brew install libvoikko`."
+        )
+    matches = tsquery(words, base_forms=base_forms)
 
     topic_rows = conn.execute(
         sql.SQL(f"""
@@ -162,7 +171,7 @@ def search(
         params,
     ).fetchall()
 
-    marks = highlight.Query.of(words)
+    marks = highlight.Query.of(words, base_forms=base_forms)
     scores: dict[int, float] = {}
     topics: dict[int, list[TopicHit]] = {}
     for meeting_id, topic_id, number, title, decisions, summary, page_no, rank in topic_rows:

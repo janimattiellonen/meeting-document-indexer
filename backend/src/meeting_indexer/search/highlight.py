@@ -3,6 +3,7 @@
 Postgres' ts_headline only knows its own stemming, so it wouldn't mark "hallituksen" for a query that
 matched it through its base form "hallitus". This marks a word when one of its base forms or compound
 parts is a base form of a query word, or when it starts with a query word as typed.
+Without base forms (Voikko not available), only the prefix as typed is marked, as search matches then.
 """
 
 from dataclasses import dataclass
@@ -17,16 +18,18 @@ FRAGMENT_DELIMITER = " … "
 class Query:
     words: list[str]  # as typed
     forms: set[str]  # base forms of every query word
+    base_forms: bool = True  # False: match prefixes only, without Voikko
 
     @classmethod
-    def of(cls, words: list[str]) -> "Query":
-        return cls(words, {form for word in words for form in lemmas.query_forms(word)})
+    def of(cls, words: list[str], *, base_forms: bool = True) -> "Query":
+        forms = {form for word in words for form in lemmas.query_forms(word)} if base_forms else set()
+        return cls(words, forms, base_forms)
 
     def matches(self, word: str) -> bool:
         lowered = word.lower()
-        return any(lowered.startswith(w.lower()) for w in self.words) or bool(
-            lemmas.matching_forms(word) & self.forms
-        )
+        if any(lowered.startswith(w.lower()) for w in self.words):
+            return True
+        return self.base_forms and bool(lemmas.matching_forms(word) & self.forms)
 
 
 def mark_all(text: str, query: Query) -> str:
