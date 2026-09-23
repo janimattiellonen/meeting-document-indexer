@@ -3,8 +3,9 @@
 Searchable index of Puskasoturit ry meeting minutes (PDF / Word). Everything runs on the local
 machine; no document content ever leaves it.
 
-**Status:** Phase 0 (proof of concept) done – `poc.py` extracts meeting data from a directory
-using the local Qwen model. Everything below is planned, not implemented.
+**Status:** Phase 1 (foundation) done – database in Docker, backend package, settings, `mi status`,
+pre-commit guard. `backend/poc.py` extracts meeting data using the local Qwen model; it becomes the
+Phase 2 pipeline.
 
 ### Known facts about the corpus
 
@@ -91,7 +92,7 @@ What this means for the plan:
 | Embeddings | `bge-m3` via Ollama (1024 dims) | Multilingual, good Finnish support |
 | Reranker | `BAAI/bge-reranker-v2-m3` via `sentence-transformers` (MPS) | Phase 5; Ollama can't run cross-encoders |
 | Database | PostgreSQL 17 + `pgvector` + `pg_trgm` | Docker image `pgvector/pgvector:pg17` |
-| Full-text search | Postgres `finnish` text search config | Stems Finnish inflections |
+| Full-text search | Postgres `finnish` text search config | Stems regular inflections only – see §8 |
 | Migrations | `dbmate`, plain SQL files | Language-agnostic, runs as a compose service |
 | Backend | Python 3.13, `uv`, FastAPI, `psycopg` 3, Pydantic v2 | Hand-written SQL; search queries are too specific for an ORM |
 | Document text | PyMuPDF, python-docx, macOS `textutil` (.doc/.rtf/.odt) | OCR later with `ocrmypdf` |
@@ -112,8 +113,7 @@ meeting-indexer/
 ├── docker-compose.yaml
 ├── .env.example                 # committed; .env is gitignored
 ├── db/
-│   ├── init/01-extensions.sql   # CREATE EXTENSION vector, pg_trgm
-│   └── migrations/              # dbmate: 20260923_001_init.sql, …
+│   └── migrations/              # dbmate; the first one also creates the vector and pg_trgm extensions
 ├── backend/
 │   ├── pyproject.toml
 │   ├── src/meeting_indexer/
@@ -151,7 +151,7 @@ meeting-indexer/
 
 | Service | Image / build | Ports | Notes |
 |---|---|---|---|
-| `db` | `pgvector/pgvector:pg17` | `127.0.0.1:5434:5432` | Named volume `pgdata`, healthcheck `pg_isready`, `db/init` mounted to `/docker-entrypoint-initdb.d` |
+| `db` | `pgvector/pgvector:pg17` | `127.0.0.1:5434:5432` | Named volume `pgdata`, healthcheck `pg_isready` |
 | `migrate` | `ghcr.io/amacneil/dbmate` | – | Runs `dbmate up`, `depends_on: db (healthy)` |
 | `api` | `backend/Dockerfile` | `127.0.0.1:8000:8000` | Profile `app`; docs dir mounted `:ro` at `/docs` |
 | `web` | `frontend/Dockerfile` (static build served by nginx or by FastAPI) | `127.0.0.1:5173:80` | Profile `app` |
@@ -159,7 +159,9 @@ meeting-indexer/
 - **Development:** only `db` and `migrate` run in Docker. API, indexer and frontend run natively
   (`uv run …`, `pnpm dev`) for a fast feedback loop. Vite proxies `/api` to `localhost:8000`,
   so there's no CORS setup.
-- **"Appliance" mode:** `docker compose --profile app up` runs everything except Ollama.
+- **"Appliance" mode:** `docker compose --profile app up` runs everything except Ollama. Inside
+  compose, the API reaches the database as host `db`, so the local-host check in `config.py`
+  must also accept the compose service name then.
 - Ports 5432 and 5433 are already used by other containers on this machine, hence 5434.
 - `.env`: `POSTGRES_*`, `DATABASE_URL`, `DOCS_ROOT` (default `./data/documents`), `OLLAMA_HOST`,
   `LLM_MODEL`, `EMBED_MODEL`.
@@ -293,6 +295,17 @@ more authoritative than attendance.
 
 - **Full-text:** `websearch_to_tsquery('finnish', q)` against `topics`, `meetings` and `chunks`,
   ranked with `ts_rank_cd`.
+- **Known limitation, found in Phase 1:** the Snowball `finnish` stemmer handles regular endings
+  (*verkkosivut* = *verkkosivuilla*), but misses stem changes and consonant gradation:
+  *hallitus* ≠ *hallituksen*, *kokous* ≠ *kokouksessa*, *kisa* ≠ *kisoille*,
+  *paita* ≠ *paidat* ≠ *paitoja*. That affects many everyday words.
+  *Fix (Phase 3):* lemmatise text with **Voikko** (`libvoikko`, a local Finnish morphological
+  analyser, available via Homebrew and as a Python binding). Lemmatise both the indexed text and
+  the query to base forms, and store the result in `tsvector` columns using the `simple` config.
+  Compound words are split into their parts as well (*kotisivu-uudistus* → *kotisivu*,
+  *uudistus*). This needs a migration that changes the generated `search_tsv` columns into
+  ordinary columns filled by the indexer. Embeddings (Phase 5) and trigram matching cover the
+  cases lemmatisation still misses.
 - **Semantic:** `embed(q)`, then cosine distance on `topics.embedding` and `chunks.embedding`.
   This catches synonyms and compound words (*nettisivut* ↔ *kotisivu-uudistus*).
 - **Hybrid:** merge both lists with Reciprocal Rank Fusion (k = 60) and group hits by meeting.
@@ -399,7 +412,7 @@ Each phase ends with something usable and a clear check that it works.
 | # | Phase | Deliverable | Done when |
 |---|---|---|---|
 | 0 | Proof of concept ✅ | `poc.py` prints extracted data | Example document extracted correctly |
-| 1 | Foundation | Repo restructure, pre-commit guard, compose (`db`, `migrate`), first migration, config, `mi --help` | `docker compose up` gives a migrated DB on 5434; `mi status` connects; committing a file from `data/` is blocked |
+| 1 | Foundation ✅ | Repo restructure, pre-commit guard, compose (`db`, `migrate`), first migration, config, `mi --help` | `docker compose up` gives a migrated DB on 5434; `mi status` connects; committing a file from `data/` is blocked |
 | 2 | Persisted indexing | Pipeline steps 1–6 and 8 (no embeddings yet), `mi index/status/reindex`, golden-set eval | A full real folder indexes, including old `.doc` files; re-running skips unchanged files; eval report produced; count of scanned documents known |
 | 3 | Search API | Full-text search, filters, sort by date, meetings, documents and board endpoints | A search for a word from a known document returns that meeting with a working page link |
 | 4 | Frontend MVP | Search page, meeting page with PDF, meeting timeline | Finding and opening a document by search works end to end in the browser |
