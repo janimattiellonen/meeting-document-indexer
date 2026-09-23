@@ -1,0 +1,33 @@
+# Meeting documents and anything derived from them – never commit (public repository)
+data/
+index.html
+scrap.txt
+*.pdf
+*.doc
+*.docx
+*.rtf
+*.odt
+*.sql.gz
+*.dump
+# Synthetic test documents only – never real minutes
+!**/tests/fixtures/**
+
+# Secrets and local settings
+.env
+.claude/settings.local.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+build/
+.react-router/
+
+# OS
+.DS_Store
