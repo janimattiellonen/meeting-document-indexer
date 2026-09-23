@@ -11,7 +11,7 @@ import typer
 
 from meeting_indexer import db, evaluation
 from meeting_indexer.config import REPO_ROOT, get_settings
-from meeting_indexer.extract import discover, normalize_path, relative_path, sha256
+from meeting_indexer.extract import SUPPORTED_SUFFIXES, discover, normalize_path, relative_path, sha256
 from meeting_indexer.indexer import Result, RunStopped, TimeLimitedAnalyzer, index_paths
 
 app = typer.Typer(help="Index and search meeting minutes. Everything runs locally.", no_args_is_help=True)
@@ -148,13 +148,23 @@ def status() -> None:
 
 
 def resolve_targets(paths: list[Path] | None, root: Path) -> list[Path]:
+    """The documents to index. A relative path that doesn't exist as given is taken relative to root.
+
+    A path that doesn't exist or isn't a supported document is refused here, so a typo never gets
+    registered and shown in `mi status` as a failed document.
+    """
     if not paths:
         return list(discover(root))
     files: list[Path] = []
-    for path in paths:
-        path = path.resolve()
+    for given in paths:
+        path = (given if given.exists() or given.is_absolute() else root / given).resolve()
         if not path.is_relative_to(root):
             raise typer.BadParameter(f"{path} is not under DOCS_ROOT ({root})")
+        if not path.exists():
+            raise typer.BadParameter(f"{given} does not exist (in DOCS_ROOT {root} either)")
+        if path.is_file() and path.suffix.lower() not in SUPPORTED_SUFFIXES:
+            supported = ", ".join(sorted(SUPPORTED_SUFFIXES))
+            raise typer.BadParameter(f"{given} is not a supported document ({supported})")
         files.extend(discover(path) if path.is_dir() else [path])
     return files
 
