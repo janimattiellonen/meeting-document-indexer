@@ -187,15 +187,15 @@ export interface components {
             /** Topics */
             topics: components["schemas"]["TopicView"][];
             /** Id */
-            id?: number | null;
+            id: number;
             /** Document Id */
-            document_id?: number | null;
+            document_id: number;
             /** Rel Path */
-            rel_path?: string | null;
+            rel_path: string;
             /** File Type */
-            file_type?: string | null;
+            file_type: string;
             /** Page Count */
-            page_count?: number | null;
+            page_count: number | null;
         };
         /** SearchResponse */
         SearchResponse: {
@@ -239,7 +239,7 @@ export interface components {
             /** Page No */
             page_no: number | null;
             /** Id */
-            id?: number | null;
+            id: number;
         };
         /** ValidationError */
         ValidationError: {

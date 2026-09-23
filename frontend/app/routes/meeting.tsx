@@ -85,7 +85,7 @@ function Details({
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">Asiakohdat</h2>
         <ol className="space-y-2">
           {meeting.topics.map((topic) => (
-            <li key={topic.id ?? topic.title}>
+            <li key={topic.id}>
               <TopicItem topic={topic} selected={topic.id === selectedTopic} onShowPage={onShowPage} />
             </li>
           ))}
@@ -150,14 +150,13 @@ function TopicItem({
 }
 
 function DocumentPanel({ meeting, page }: { meeting: MeetingView; page: number | null }) {
-  if (meeting.document_id == null) return null;
   const url = documentUrl(meeting.document_id, page);
   const isPdf = meeting.file_type === "pdf";
 
   return (
     <aside className="space-y-2 lg:sticky lg:top-4 lg:self-start">
       <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="truncate text-stone-500" title={meeting.rel_path ?? undefined}>
+        <span className="truncate text-stone-500" title={meeting.rel_path}>
           {meeting.rel_path}
         </span>
         <a href={url} target="_blank" rel="noreferrer" className="shrink-0 underline">

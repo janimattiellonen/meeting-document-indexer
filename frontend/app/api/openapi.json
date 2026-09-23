@@ -523,47 +523,19 @@
             "title": "Topics"
           },
           "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "integer",
             "title": "Id"
           },
           "document_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "integer",
             "title": "Document Id"
           },
           "rel_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Rel Path"
           },
           "file_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "File Type"
           },
           "page_count": {
@@ -589,7 +561,12 @@
           "summary",
           "warnings",
           "attendees",
-          "topics"
+          "topics",
+          "id",
+          "document_id",
+          "rel_path",
+          "file_type",
+          "page_count"
         ],
         "title": "MeetingView"
       },
@@ -742,14 +719,7 @@
             "title": "Page No"
           },
           "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "integer",
             "title": "Id"
           }
         },
@@ -759,7 +729,8 @@
           "title",
           "summary",
           "decisions",
-          "page_no"
+          "page_no",
+          "id"
         ],
         "title": "TopicView"
       },

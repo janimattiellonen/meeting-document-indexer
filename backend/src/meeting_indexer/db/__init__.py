@@ -250,7 +250,7 @@ class TopicView:
     summary: str | None
     decisions: str | None
     page_no: int | None
-    id: int | None = None
+    id: int
 
 
 @dataclass
@@ -272,11 +272,11 @@ class MeetingView:
     warnings: list[str]
     attendees: list[AttendeeView]
     topics: list[TopicView]
-    id: int | None = None
-    document_id: int | None = None
-    rel_path: str | None = None
-    file_type: str | None = None
-    page_count: int | None = None
+    id: int
+    document_id: int
+    rel_path: str
+    file_type: str
+    page_count: int | None
 
     def names(self, status: str) -> list[str]:
         return [a.name for a in self.attendees if a.status == status]

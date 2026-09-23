@@ -19,7 +19,15 @@ def meeting(**overrides) -> MeetingView:
             AttendeeView("Teppo Testaaja", "present", None),
             AttendeeView("Liisa Laine", "absent", None),
         ],
-        "topics": [TopicView("1", "Kokouksen avaus", None, None, 1), TopicView("2", "Talous", None, None, 1)],
+        "topics": [
+            TopicView("1", "Kokouksen avaus", None, None, 1, id=1),
+            TopicView("2", "Talous", None, None, 1, id=2),
+        ],
+        "id": 1,
+        "document_id": 1,
+        "rel_path": "a.pdf",
+        "file_type": "pdf",
+        "page_count": 2,
     }
     return MeetingView(**(fields | overrides))
 
@@ -38,7 +46,7 @@ def test_mistakes_are_reported_per_field() -> None:
             AttendeeView("Maija Meikäläinen", "present", None),
             AttendeeView("Keksitty Henkilö", "present", None),
         ],
-        topics=[TopicView("1", "Kokouksen avaus.", None, None, 1)],
+        topics=[TopicView("1", "Kokouksen avaus.", None, None, 1, id=1)],
     )
 
     result = score(golden, actual)
