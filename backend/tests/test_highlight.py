@@ -47,3 +47,10 @@ def test_long_text_gives_excerpts_around_matches() -> None:
 def test_long_text_without_a_match_gives_its_start() -> None:
     text = " ".join(f"sana{i}" for i in range(40))
     assert fragments(text, Query.of(["kisa"]), max_words=5) == "sana0 sana1 sana2 sana3 sana4 …"
+
+
+def test_words_whose_base_form_or_compound_part_starts_with_the_typed_query_are_marked() -> None:
+    # Search matches "kis" as a prefix of the base forms and compound parts in lemma_tsv ("kisa").
+    assert shown(mark_all("seuramestaruuskisoille kotisivu-uudistus", Query.of(["uudis", "kis"]))) == (
+        "[seuramestaruuskisoille] [kotisivu-uudistus]"
+    )

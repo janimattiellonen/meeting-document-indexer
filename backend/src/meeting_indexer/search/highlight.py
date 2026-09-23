@@ -2,7 +2,7 @@
 
 Postgres' ts_headline only knows its own stemming, so it wouldn't mark "hallituksen" for a query that
 matched it through its base form "hallitus". This marks a word when one of its base forms or compound
-parts is a base form of a query word, or when it starts with a query word as typed.
+parts is a base form of a query word, or when it or one of those starts with a query word as typed.
 Without base forms (Voikko not available), only the prefix as typed is marked, as search matches then.
 """
 
@@ -29,7 +29,14 @@ class Query:
         lowered = word.lower()
         if any(lowered.startswith(w.lower()) for w in self.words):
             return True
-        return self.base_forms and bool(lemmas.matching_forms(word) & self.forms)
+        if not self.base_forms:
+            return False
+        forms = lemmas.matching_forms(word)
+        # Search also matches a typed prefix against lemma_tsv: "kis" finds "seuramestaruuskisoille",
+        # whose compound part is "kisa".
+        return bool(forms & self.forms) or any(
+            form.startswith(w.lower()) for form in forms for w in self.words
+        )
 
 
 def mark_all(text: str, query: Query) -> str:
