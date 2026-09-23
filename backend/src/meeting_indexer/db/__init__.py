@@ -2,11 +2,19 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, time
+from typing import Literal
 
 import psycopg
 from psycopg.types.json import Jsonb
 
 from meeting_indexer.config import get_settings
+
+# The values of documents.status (its CHECK constraint lists the same ones).
+DocumentStatus = Literal["pending", "indexed", "no_text", "failed", "timed_out"]
+# The attempt ended with a result (no text layer is a result too): the document is done until it changes.
+COMPLETED: frozenset[DocumentStatus] = frozenset({"indexed", "no_text"})
+# The attempt didn't end with a result; retried only when asked or when the file changes.
+FAILED: frozenset[DocumentStatus] = frozenset({"failed", "timed_out"})
 
 
 def returned_id(cursor: psycopg.Cursor) -> int:
@@ -33,7 +41,7 @@ def document_counts(conn: psycopg.Connection) -> dict[str, int]:
 @dataclass
 class ProblemDocument:
     rel_path: str
-    status: str
+    status: DocumentStatus
     error: str | None
     attempts: int
     last_attempt_at: datetime | None
@@ -51,7 +59,7 @@ def problem_documents(conn: psycopg.Connection) -> list[ProblemDocument]:
     return [ProblemDocument(*row) for row in rows]
 
 
-def stored_states(conn: psycopg.Connection) -> dict[str, tuple[str | None, str]]:
+def stored_states(conn: psycopg.Connection) -> dict[str, tuple[str | None, DocumentStatus]]:
     """rel_path -> (sha256, status) of every registered document."""
     return {
         path: (digest, status)
@@ -63,7 +71,7 @@ def stored_states(conn: psycopg.Connection) -> dict[str, tuple[str | None, str]]
 class StoredDocument:
     id: int
     sha256: str | None
-    status: str
+    status: DocumentStatus
     extractor_version: str | None
     llm_model: str | None
 
@@ -110,7 +118,7 @@ def record_failure(
     rel_path: str,
     file_type: str,
     sha256: str | None,
-    status: str,
+    status: DocumentStatus,
     error: str,
     duration_seconds: float,
 ) -> None:
@@ -146,7 +154,7 @@ def save_document(
     sha256: str,
     file_type: str,
     pages: list[str],
-    status: str,
+    status: DocumentStatus,
     duration_seconds: float | None = None,
     extractor_version: str | None = None,
     llm_model: str | None = None,

@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections import Counter, defaultdict
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +14,7 @@ import typer
 from meeting_indexer import db, evaluation
 from meeting_indexer.config import REPO_ROOT, get_settings
 from meeting_indexer.extract import SUPPORTED_SUFFIXES, discover, normalize_path, relative_path, sha256
-from meeting_indexer.indexer import Result, RunStopped, TimeLimitedAnalyzer, index_paths
+from meeting_indexer.indexer import Result, ResultStatus, RunStopped, TimeLimitedAnalyzer, index_paths
 
 app = typer.Typer(help="Index and search meeting minutes. Everything runs locally.", no_args_is_help=True)
 
@@ -78,7 +79,9 @@ def print_section(title: str, lines: list[str]) -> None:
             typer.echo(f"  {line}")
 
 
-def changed_files(stored: Mapping[str, tuple[str | None, str]], on_disk: Mapping[str, Path]) -> list[str]:
+def changed_files(
+    stored: Mapping[str, tuple[str | None, db.DocumentStatus]], on_disk: Mapping[str, Path]
+) -> list[str]:
     """Registered files whose content differs from the version last processed, whatever the outcome
     was (indexed, no text, failed or timed out). Pending files have no hash yet."""
     return sorted(
@@ -128,9 +131,9 @@ def status() -> None:
         took = f", took {format_duration(p.duration_seconds)}" if p.duration_seconds else ""
         return f"{p.attempts} attempt(s), last {when}{took}"
 
-    by_status = {
-        s: [p for p in problems if p.status == s] for s in ("pending", "timed_out", "failed", "no_text")
-    }
+    by_status: dict[db.DocumentStatus, list[db.ProblemDocument]] = defaultdict(list)
+    for p in problems:
+        by_status[p.status].append(p)
     print_section(
         "Never processed (pending): a run was stopped or hasn't reached them",
         [p.rel_path for p in by_status["pending"]],
@@ -194,7 +197,7 @@ def start_run_log() -> Path:
     return path
 
 
-STATUS_COLORS = {
+STATUS_COLORS: dict[ResultStatus, str] = {
     "indexed": "green",
     "skipped": "bright_black",
     "no_text": "yellow",
@@ -261,8 +264,8 @@ def run_index(paths: list[Path] | None, force: bool, retry_failed: bool, time_li
         except RunStopped as e:
             stopped, results = e, e.results
 
-    totals = {s: sum(1 for r in results if r.status == s) for s in STATUS_COLORS}
-    summary = ", ".join(f"{s}: {n}" for s, n in totals.items())
+    totals = Counter(r.status for r in results)
+    summary = ", ".join(f"{s}: {totals[s]}" for s in STATUS_COLORS)
     log.info("run finished: %s", summary)
     typer.echo("\n" + summary)
     if stopped:

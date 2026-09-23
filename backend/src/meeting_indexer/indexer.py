@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 import psycopg
 
@@ -60,10 +61,14 @@ class TimeLimitedAnalyzer:
         return run_with_time_limit(analyze_document, path, self.ollama_host, self.model, seconds=self.seconds)
 
 
+# What happened to a document in a run: a document status, or skipped because nothing changed.
+ResultStatus = db.DocumentStatus | Literal["skipped"]
+
+
 @dataclass
 class Result:
     rel_path: str
-    status: str  # indexed | no_text | failed | timed_out | skipped
+    status: ResultStatus
     seconds: float = 0.0
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
@@ -80,7 +85,7 @@ class RunStopped(Exception):
 def should_skip(stored: db.StoredDocument | None, digest: str, model: str, retry_failed: bool) -> bool:
     if stored is None or stored.sha256 != digest or stored.status == "pending":
         return False
-    if stored.status in ("failed", "timed_out"):
+    if stored.status in db.FAILED:
         # Retrying automatically would spend the full time limit on the same file on every run.
         return not retry_failed
     if stored.status == "no_text":
@@ -157,7 +162,7 @@ def _failed(
     rel_path: str,
     file_type: str,
     digest: str | None,
-    status: str,
+    status: db.DocumentStatus,
     error: str,
     started: float,
     attempt_started: bool,
@@ -272,9 +277,9 @@ def index_paths(
         if on_result:
             on_result(i, len(paths), result)
 
-        if result.status in ("indexed", "no_text"):
+        if result.status in db.COMPLETED:
             consecutive_failures = 0
-        elif result.status in ("failed", "timed_out"):
+        elif result.status in db.FAILED:
             consecutive_failures += 1
             if service_available is not None and not service_available():
                 raise RunStopped("the LLM service is not responding", results)

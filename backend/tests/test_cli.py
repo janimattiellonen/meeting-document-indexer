@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import typer
 
+from meeting_indexer import db
 from meeting_indexer.cli import changed_files, resolve_targets
 from meeting_indexer.extract import sha256
 
@@ -53,9 +54,11 @@ def test_a_path_outside_the_root_is_rejected(root: Path, tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize("state", ["indexed", "no_text", "failed", "timed_out"])
-def test_a_changed_file_is_listed_whatever_its_last_outcome(root: Path, state: str) -> None:
+def test_a_changed_file_is_listed_whatever_its_last_outcome(root: Path, state: db.DocumentStatus) -> None:
     path = root / "2019" / "hallitus-3-2019.pdf"
-    stored = {"2019/hallitus-3-2019.pdf": (sha256(path), state)}
+    stored: dict[str, tuple[str | None, db.DocumentStatus]] = {
+        "2019/hallitus-3-2019.pdf": (sha256(path), state)
+    }
     assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == []
 
     path.write_bytes(b"%PDF korjattu")
