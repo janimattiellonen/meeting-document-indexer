@@ -1,0 +1,7 @@
+repos:
+  - repo: local
+    hooks:
+      - id: guard-real-content
+        name: Block real meeting content
+        entry: scripts/guard_commit.py
+        language: script
