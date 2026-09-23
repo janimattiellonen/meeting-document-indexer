@@ -352,8 +352,17 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 
 ## 8. Search
 
-- **Full-text:** `websearch_to_tsquery('finnish', q)` against `topics`, `meetings` and `chunks`,
-  ranked with `ts_rank_cd`.
+- **Full-text (built in the Phase 3–4 slice, `search/__init__.py`):**
+  - Each query word (letters, digits and inner hyphens, at least two characters) is matched as a
+    prefix in two forms: stemmed (`to_tsquery('finnish', 'word:*')`) and as typed (`simple`).
+    The stemmer turns *verkko* into *verko*, which is not a prefix of *verkkosivut*.
+  - All words must match. Finnish stopwords (*ja*, *on*) are dropped, because the index leaves
+    them out.
+  - There are no search operators: `OR`, quotes and a leading `-` are read as ordinary words.
+    `websearch_to_tsquery` would interpret them, but it can't match prefixes.
+  - Searches `topics` (title, summary, decisions) and `chunks` (the raw text), ranked with
+    `ts_rank_cd`; a match in the raw text counts half. `meetings.search_tsv` (meeting title and
+    summary) is not queried yet.
 - **Known limitation, found in Phase 1:** the Snowball `finnish` stemmer handles regular endings
   (*verkkosivut* = *verkkosivuilla*), but misses stem changes and consonant gradation:
   *hallitus* ≠ *hallituksen*, *kokous* ≠ *kokouksessa*, *kisa* ≠ *kisoille*,
@@ -380,7 +389,7 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/search?q=&from=&to=&type=&person=&sort=` | Hybrid search, grouped by meeting |
+| GET | `/api/search?q=&year_from=&year_to=&type=&person=&sort=` | Hybrid search, grouped by meeting |
 | GET | `/api/meetings?year=&type=` | Meeting list (timeline) |
 | GET | `/api/meetings/{id}` | Full meeting: attendance, topics, summary |
 | GET | `/api/documents/{id}/file` | Streams the original file (`inline`; path must resolve inside `DOCS_ROOT`) |
@@ -390,6 +399,9 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 | POST | `/api/ask` | Question → answer with cited topics (Phase 7) |
 | POST | `/api/index` · GET `/api/index/status` | Start indexing from the UI and follow progress (Phase 8) |
 
+- Built so far: `/api/search` with `q` (1–200 characters), `year_from`/`year_to` (1900–2999),
+  `type` and `sort` (`relevance`, `oldest`, `newest`), full-text only; `/api/meetings` without
+  filters; `/api/meetings/{id}`; `/api/documents/{id}/file`. `person` comes with the people pages.
 - The API binds to `127.0.0.1` only.
 - The OpenAPI schema is exported to `frontend/app/api/schema.d.ts` with a `pnpm gen:api` script.
 
@@ -399,7 +411,7 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 
 | Route | Content |
 |---|---|
-| `/` | Search box and filters. Results are grouped by meeting (date, title, matching topics with highlights, "Avaa pöytäkirja" link). All state lives in the URL (`?q=…&from=…`) |
+| `/` | Search box and filters. Results are grouped by meeting (date, title, matching topics with highlights, "Avaa pöytäkirja" link). All state lives in the URL, with Finnish parameter names (`?q=…&alkaen=…&asti=…&jarjestys=…`) |
 | `/kokoukset` | Timeline of meetings by year |
 | `/kokoukset/:id` | Meeting details, with the PDF shown next to them (iframe `#page=N`) |
 | `/henkilot`, `/henkilot/:id` | People, and each person's roles and attendance over time |
