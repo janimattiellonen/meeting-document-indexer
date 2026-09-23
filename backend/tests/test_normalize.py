@@ -35,8 +35,10 @@ def test_fallback_skips_impossible_dates_in_the_text() -> None:
     assert meeting_date(None, "31.2.2019 ja 5.3.2019", Warnings(), TODAY) == date(2019, 3, 5)
 
 
-def test_no_date_anywhere_gives_none() -> None:
-    assert meeting_date(None, "ei päivämäärää", Warnings(), TODAY) is None
+def test_no_date_anywhere_gives_none_and_says_so() -> None:
+    warnings = Warnings()
+    assert meeting_date(None, "ei päivämäärää", warnings, TODAY) is None
+    assert warnings.items == ["date None from the model is missing or invalid; no date found in the text"]
 
 
 @pytest.mark.parametrize(

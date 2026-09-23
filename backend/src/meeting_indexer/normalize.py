@@ -52,7 +52,8 @@ def meeting_date(llm_value: str | None, first_page: str, warnings: Warnings, tod
     if parsed and plausible(parsed, today):
         return parsed
     fallback = first_date_in_text(first_page, today)
-    warnings.add(f"date {llm_value!r} from the model is missing or invalid; using {fallback} from the text")
+    found = f"using {fallback} from the text" if fallback else "no date found in the text"
+    warnings.add(f"date {llm_value!r} from the model is missing or invalid; {found}")
     return fallback
 
 
