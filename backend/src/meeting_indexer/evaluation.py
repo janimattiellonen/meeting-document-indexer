@@ -53,21 +53,22 @@ def _similar_title(a: str, b: str) -> bool:
 def score(golden: dict, actual: db.MeetingView | None) -> DocumentScore:
     if actual is None:
         return DocumentScore(golden["rel_path"], {}, (0, 0), (0, 0), (0, 0), missing=True)
+    # The extraction in the golden file's own format, so both are compared field by field.
+    extracted = golden_draft(actual, golden["rel_path"])
     checks = {
-        "title": _same(golden.get("title"), actual.title),
-        "meeting_type": golden.get("meeting_type") == actual.meeting_type,
-        "date": golden.get("date") == (actual.meeting_date.isoformat() if actual.meeting_date else None),
-        "start_time": golden.get("start_time")
-        == (actual.start_time.strftime("%H:%M") if actual.start_time else None),
-        "location": _same(golden.get("location"), actual.location),
-        "topic_count": len(golden.get("topics", [])) == len(actual.topics),
+        "title": _same(golden.get("title"), extracted["title"]),
+        "meeting_type": golden.get("meeting_type") == extracted["meeting_type"],
+        "date": golden.get("date") == extracted["date"],
+        "start_time": golden.get("start_time") == extracted["start_time"],
+        "location": _same(golden.get("location"), extracted["location"]),
+        "topic_count": len(golden.get("topics", [])) == len(extracted["topics"]),
     }
     return DocumentScore(
         golden["rel_path"],
         checks,
-        present=_precision_recall(golden.get("present", []), actual.names("present"), _same),
-        absent=_precision_recall(golden.get("absent", []), actual.names("absent"), _same),
-        topics=_precision_recall(golden.get("topics", []), [t.title for t in actual.topics], _similar_title),
+        present=_precision_recall(golden.get("present", []), extracted["present"], _same),
+        absent=_precision_recall(golden.get("absent", []), extracted["absent"], _same),
+        topics=_precision_recall(golden.get("topics", []), extracted["topics"], _similar_title),
     )
 
 

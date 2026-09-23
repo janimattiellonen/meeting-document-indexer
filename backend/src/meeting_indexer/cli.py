@@ -2,6 +2,8 @@
 
 import json
 import logging
+from collections import Counter, defaultdict
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -11,8 +13,8 @@ import typer
 
 from meeting_indexer import db, evaluation
 from meeting_indexer.config import REPO_ROOT, get_settings
-from meeting_indexer.extract import discover, normalize_path, relative_path, sha256
-from meeting_indexer.indexer import Result, RunStopped, TimeLimitedAnalyzer, index_paths
+from meeting_indexer.extract import SUPPORTED_SUFFIXES, discover, normalize_path, relative_path, sha256
+from meeting_indexer.indexer import Result, ResultStatus, RunStopped, TimeLimitedAnalyzer, index_paths
 
 app = typer.Typer(help="Index and search meeting minutes. Everything runs locally.", no_args_is_help=True)
 
@@ -77,6 +79,25 @@ def print_section(title: str, lines: list[str]) -> None:
             typer.echo(f"  {line}")
 
 
+def changed_files(
+    stored: Mapping[str, tuple[str | None, db.DocumentStatus]], on_disk: Mapping[str, Path]
+) -> tuple[list[str], list[str]]:
+    """(changed, unreadable): registered files whose content differs from the version last processed,
+    whatever the outcome was (indexed, no text, failed or timed out), and "path: error" for files that
+    couldn't be read to compare. Pending files have no hash yet."""
+    changed: list[str] = []
+    unreadable: list[str] = []
+    for rel, (digest, _) in sorted(stored.items()):
+        if digest is None or rel not in on_disk:
+            continue
+        try:
+            if sha256(on_disk[rel]) != digest:
+                changed.append(rel)
+        except OSError as e:  # one unreadable file must not hide the rest of the status
+            unreadable.append(f"{rel}: {type(e).__name__}: {e.strerror or e}")
+    return changed, unreadable
+
+
 @app.command()
 def status() -> None:
     """Check the setup, and list every document that isn't indexed or has changed since."""
@@ -87,7 +108,7 @@ def status() -> None:
         with db.connect() as conn:
             counts = db.document_counts(conn)
             problems = db.problem_documents(conn)
-            stored = db.stored_hashes(conn)
+            stored = db.stored_states(conn)
         summary = ", ".join(f"{s}: {n}" for s, n in sorted(counts.items())) or "no documents indexed yet"
         report(True, "database", summary)
     except Exception as e:
@@ -117,9 +138,9 @@ def status() -> None:
         took = f", took {format_duration(p.duration_seconds)}" if p.duration_seconds else ""
         return f"{p.attempts} attempt(s), last {when}{took}"
 
-    by_status = {
-        s: [p for p in problems if p.status == s] for s in ("pending", "timed_out", "failed", "no_text")
-    }
+    by_status: dict[db.DocumentStatus, list[db.ProblemDocument]] = defaultdict(list)
+    for p in problems:
+        by_status[p.status].append(p)
     print_section(
         "Never processed (pending): a run was stopped or hasn't reached them",
         [p.rel_path for p in by_status["pending"]],
@@ -134,27 +155,32 @@ def status() -> None:
     )
     print_section("No text layer, probably scanned (needs OCR)", [p.rel_path for p in by_status["no_text"]])
     print_section("Not registered yet (added after the last run)", sorted(set(on_disk) - set(stored)))
-    print_section(
-        "Changed since indexed (re-extracted on the next run)",
-        sorted(
-            rel
-            for rel, (digest, state) in stored.items()
-            if state == "indexed" and rel in on_disk and sha256(on_disk[rel]) != digest
-        ),
-    )
+    changed, unreadable = changed_files(stored, on_disk)
+    print_section("Changed since last processed (re-extracted on the next run)", changed)
+    print_section("Can't be read, so not compared with the database", unreadable)
     print_section("In the database but no longer on disk", sorted(set(stored) - set(on_disk)))
 
     raise typer.Exit(0 if healthy else 1)
 
 
 def resolve_targets(paths: list[Path] | None, root: Path) -> list[Path]:
+    """The documents to index. A relative path that doesn't exist as given is taken relative to root.
+
+    A path that doesn't exist or isn't a supported document is refused here, so a typo never gets
+    registered and shown in `mi status` as a failed document.
+    """
     if not paths:
         return list(discover(root))
     files: list[Path] = []
-    for path in paths:
-        path = path.resolve()
+    for given in paths:
+        path = (given if given.exists() or given.is_absolute() else root / given).resolve()
         if not path.is_relative_to(root):
             raise typer.BadParameter(f"{path} is not under DOCS_ROOT ({root})")
+        if not path.exists():
+            raise typer.BadParameter(f"{given} does not exist (in DOCS_ROOT {root} either)")
+        if path.is_file() and path.suffix.lower() not in SUPPORTED_SUFFIXES:
+            supported = ", ".join(sorted(SUPPORTED_SUFFIXES))
+            raise typer.BadParameter(f"{given} is not a supported document ({supported})")
         files.extend(discover(path) if path.is_dir() else [path])
     return files
 
@@ -178,7 +204,7 @@ def start_run_log() -> Path:
     return path
 
 
-STATUS_COLORS = {
+STATUS_COLORS: dict[ResultStatus, str] = {
     "indexed": "green",
     "skipped": "bright_black",
     "no_text": "yellow",
@@ -245,8 +271,8 @@ def run_index(paths: list[Path] | None, force: bool, retry_failed: bool, time_li
         except RunStopped as e:
             stopped, results = e, e.results
 
-    totals = {s: sum(1 for r in results if r.status == s) for s in STATUS_COLORS}
-    summary = ", ".join(f"{s}: {n}" for s, n in totals.items())
+    totals = Counter(r.status for r in results)
+    summary = ", ".join(f"{s}: {totals[s]}" for s in STATUS_COLORS)
     log.info("run finished: %s", summary)
     typer.echo("\n" + summary)
     if stopped:

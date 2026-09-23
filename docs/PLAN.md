@@ -267,8 +267,8 @@ GIN `gin_trgm_ops` on `topics.title` and `person_aliases.alias`, B-tree on `meet
 
 **Board members for a year** come from `attendance` of `board` meetings in that year, with roles.
 "That year" means the board's term, taken from the meeting number ("1/2026"), not the meeting date:
-a new board can hold its first meeting before the year starts (meeting 1/2026 was held on
-8.12.2025).
+a new board can hold its first meeting before the year starts (meeting 1/20XX can be held in
+December of the previous year).
 Later, general meetings (syyskokous) can also be extracted for *elected* officials, which is
 more authoritative than attendance.
 

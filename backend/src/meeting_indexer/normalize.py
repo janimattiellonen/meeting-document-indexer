@@ -9,7 +9,7 @@ EARLIEST_DATE = date(2000, 1, 1)
 FINNISH_DATE = re.compile(r"(?<!\d)(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)")
 TIME = re.compile(r"^\s*(?:klo\s*)?(\d{1,2})(?:[.:](\d{2}))?\s*$", re.IGNORECASE)
 TITLE_MATCH_RATIO = 0.8
-# "PUSKASOTURIT RY Hallituksen kokous 4/2026": the association's letterhead before the title.
+# "ESIMERKKISEURA RY Hallituksen kokous 4/2026": the association's letterhead before the title.
 LETTERHEAD = re.compile(r"^\s*\S.*?\s+ry\s+(?=\S)", re.IGNORECASE)
 LEADING_ITEM_NUMBER = re.compile(r"^\s*(\d+[a-z]?)[.)]\s+(.+)$", re.IGNORECASE | re.DOTALL)
 
@@ -52,7 +52,8 @@ def meeting_date(llm_value: str | None, first_page: str, warnings: Warnings, tod
     if parsed and plausible(parsed, today):
         return parsed
     fallback = first_date_in_text(first_page, today)
-    warnings.add(f"date {llm_value!r} from the model is missing or invalid; using {fallback} from the text")
+    found = f"using {fallback} from the text" if fallback else "no date found in the text"
+    warnings.add(f"date {llm_value!r} from the model is missing or invalid; {found}")
     return fallback
 
 

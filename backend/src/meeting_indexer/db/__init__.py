@@ -2,13 +2,20 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, time
-from typing import LiteralString
+from typing import Literal, LiteralString
 
 import psycopg
 from psycopg.types.json import Jsonb
 
 from meeting_indexer.config import get_settings
 from meeting_indexer.llm import MeetingType
+
+# The values of documents.status (its CHECK constraint lists the same ones).
+DocumentStatus = Literal["pending", "indexed", "no_text", "failed", "timed_out"]
+# The attempt ended with a result (no text layer is a result too): the document is done until it changes.
+COMPLETED: frozenset[DocumentStatus] = frozenset({"indexed", "no_text"})
+# The attempt didn't end with a result; retried only when asked or when the file changes.
+FAILED: frozenset[DocumentStatus] = frozenset({"failed", "timed_out"})
 
 
 def returned_id(cursor: psycopg.Cursor) -> int:
@@ -35,7 +42,7 @@ def document_counts(conn: psycopg.Connection) -> dict[str, int]:
 @dataclass
 class ProblemDocument:
     rel_path: str
-    status: str
+    status: DocumentStatus
     error: str | None
     attempts: int
     last_attempt_at: datetime | None
@@ -53,7 +60,7 @@ def problem_documents(conn: psycopg.Connection) -> list[ProblemDocument]:
     return [ProblemDocument(*row) for row in rows]
 
 
-def stored_hashes(conn: psycopg.Connection) -> dict[str, tuple[str | None, str]]:
+def stored_states(conn: psycopg.Connection) -> dict[str, tuple[str | None, DocumentStatus]]:
     """rel_path -> (sha256, status) of every registered document."""
     return {
         path: (digest, status)
@@ -65,7 +72,7 @@ def stored_hashes(conn: psycopg.Connection) -> dict[str, tuple[str | None, str]]
 class StoredDocument:
     id: int
     sha256: str | None
-    status: str
+    status: DocumentStatus
     extractor_version: str | None
     llm_model: str | None
 
@@ -112,19 +119,23 @@ def record_failure(
     rel_path: str,
     file_type: str,
     sha256: str | None,
-    status: str,
+    status: DocumentStatus,
     error: str,
     duration_seconds: float,
 ) -> None:
-    """Mark a failed or timed-out attempt. Any earlier extraction of the document is kept."""
+    """Mark a failed or timed-out attempt, counted by start_attempt. Any earlier extraction is kept.
+
+    sha256 is the hash of the file that failed, so it is retried when the file changes but not on every
+    run. When the file couldn't even be hashed (sha256 None), the stored hash is kept.
+    """
     conn.execute(
         """
         INSERT INTO documents (rel_path, file_type, sha256, status, error, duration_seconds,
                                attempts, last_attempt_at)
         VALUES (%(rel_path)s, %(file_type)s, %(sha256)s, %(status)s, %(error)s, %(duration)s, 1, now())
         ON CONFLICT (rel_path) DO UPDATE SET
-            sha256 = EXCLUDED.sha256, status = EXCLUDED.status, error = EXCLUDED.error,
-            duration_seconds = EXCLUDED.duration_seconds, updated_at = now()
+            sha256 = coalesce(EXCLUDED.sha256, documents.sha256), status = EXCLUDED.status,
+            error = EXCLUDED.error, duration_seconds = EXCLUDED.duration_seconds, updated_at = now()
         """,
         {
             "rel_path": rel_path,
@@ -144,7 +155,7 @@ def save_document(
     sha256: str,
     file_type: str,
     pages: list[str],
-    status: str,
+    status: DocumentStatus,
     duration_seconds: float | None = None,
     extractor_version: str | None = None,
     llm_model: str | None = None,
