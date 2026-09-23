@@ -1,4 +1,6 @@
-const MEETING_TYPES: Record<string, string> = {
+import type { MeetingType } from "~/api/client";
+
+const MEETING_TYPES: Record<MeetingType, string> = {
   board: "Hallituksen kokous",
   spring_general: "Kevätkokous",
   autumn_general: "Syyskokous",
@@ -6,8 +8,8 @@ const MEETING_TYPES: Record<string, string> = {
   other: "Muu kokous",
 };
 
-export function meetingTypeLabel(type: string): string {
-  return MEETING_TYPES[type] ?? type;
+export function meetingTypeLabel(type: MeetingType): string {
+  return MEETING_TYPES[type];
 }
 
 /** "2026-05-12" -> "12.5.2026". Parsed by hand: `new Date("2026-05-12")` is UTC and can shift a day. */

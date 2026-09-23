@@ -119,8 +119,11 @@ export interface components {
             meeting_id: number;
             /** Title */
             title: string;
-            /** Meeting Type */
-            meeting_type: string;
+            /**
+             * Meeting Type
+             * @enum {string}
+             */
+            meeting_type: "board" | "spring_general" | "autumn_general" | "extraordinary" | "other";
             /** Meeting Date */
             meeting_date: string | null;
             /** Document Id */
@@ -140,8 +143,11 @@ export interface components {
             id: number;
             /** Title */
             title: string;
-            /** Meeting Type */
-            meeting_type: string;
+            /**
+             * Meeting Type
+             * @enum {string}
+             */
+            meeting_type: "board" | "spring_general" | "autumn_general" | "extraordinary" | "other";
             /** Meeting Date */
             meeting_date: string | null;
             /** Location */
@@ -159,8 +165,11 @@ export interface components {
         MeetingView: {
             /** Title */
             title: string;
-            /** Meeting Type */
-            meeting_type: string;
+            /**
+             * Meeting Type
+             * @enum {string}
+             */
+            meeting_type: "board" | "spring_general" | "autumn_general" | "extraordinary" | "other";
             /** Meeting Date */
             meeting_date: string | null;
             /** Start Time */

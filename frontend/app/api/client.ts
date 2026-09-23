@@ -11,6 +11,7 @@ export type TextHit = components["schemas"]["TextHit"];
 export type MeetingSummary = components["schemas"]["MeetingSummary"];
 export type MeetingView = components["schemas"]["MeetingView"];
 export type TopicView = components["schemas"]["TopicView"];
+export type MeetingType = MeetingHit["meeting_type"];
 
 export function documentUrl(documentId: number, page?: number | null): string {
   const url = `/api/documents/${documentId}/file`;

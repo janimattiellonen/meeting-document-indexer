@@ -18,6 +18,8 @@ from typing import Literal
 import psycopg
 from psycopg import sql
 
+from meeting_indexer.llm import MeetingType
+
 # Highlight markers in snippets. The frontend splits on them and renders plain text, so nothing from a
 # document is ever rendered as HTML. Extraction doesn't strip these control characters, but text rarely
 # contains them; if a document did, the worst case is a wrongly highlighted span.
@@ -85,7 +87,7 @@ class TextHit:
 class MeetingHit:
     meeting_id: int
     title: str
-    meeting_type: str
+    meeting_type: MeetingType
     meeting_date: date | None
     document_id: int
     file_type: str
@@ -107,7 +109,7 @@ def search(
     *,
     year_from: int | None = None,
     year_to: int | None = None,
-    meeting_type: str | None = None,
+    meeting_type: MeetingType | None = None,
     sort: Sort = "relevance",
 ) -> list[MeetingHit]:
     words = drop_stopwords(conn, search_words(query))

@@ -291,6 +291,13 @@
           },
           "meeting_type": {
             "type": "string",
+            "enum": [
+              "board",
+              "spring_general",
+              "autumn_general",
+              "extraordinary",
+              "other"
+            ],
             "title": "Meeting Type"
           },
           "meeting_date": {
@@ -356,6 +363,13 @@
           },
           "meeting_type": {
             "type": "string",
+            "enum": [
+              "board",
+              "spring_general",
+              "autumn_general",
+              "extraordinary",
+              "other"
+            ],
             "title": "Meeting Type"
           },
           "meeting_date": {
@@ -420,6 +434,13 @@
           },
           "meeting_type": {
             "type": "string",
+            "enum": [
+              "board",
+              "spring_general",
+              "autumn_general",
+              "extraordinary",
+              "other"
+            ],
             "title": "Meeting Type"
           },
           "meeting_date": {

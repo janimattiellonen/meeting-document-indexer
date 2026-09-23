@@ -8,6 +8,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from meeting_indexer.config import get_settings
+from meeting_indexer.llm import MeetingType
 
 
 def returned_id(cursor: psycopg.Cursor) -> int:
@@ -262,7 +263,7 @@ class AttendeeView:
 @dataclass
 class MeetingView:
     title: str
-    meeting_type: str
+    meeting_type: MeetingType
     meeting_date: date | None
     start_time: time | None
     end_time: time | None
@@ -335,7 +336,7 @@ def _load_meeting(conn: psycopg.Connection, condition: LiteralString, value: obj
 class MeetingSummary:
     id: int
     title: str
-    meeting_type: str
+    meeting_type: MeetingType
     meeting_date: date | None
     location: str | None
     topic_count: int

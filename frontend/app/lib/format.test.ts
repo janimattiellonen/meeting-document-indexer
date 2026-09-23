@@ -14,10 +14,9 @@ describe("format", () => {
     expect(formatTime(null)).toBeNull();
   });
 
-  it("names meeting types in Finnish and passes unknown ones through", () => {
+  it("names meeting types in Finnish", () => {
     expect(meetingTypeLabel("board")).toBe("Hallituksen kokous");
     expect(meetingTypeLabel("autumn_general")).toBe("Syyskokous");
-    expect(meetingTypeLabel("something")).toBe("something");
   });
 
   it("takes the year of a date", () => {
