@@ -1,0 +1,43 @@
+[project]
+name = "meeting-indexer"
+version = "0.1.0"
+description = "Local, searchable index of meeting minutes"
+requires-python = ">=3.13"
+dependencies = [
+    "ollama>=0.6.2",
+    "psycopg[binary,pool]>=3.3.6",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pymupdf>=1.28.2",
+    "python-docx>=1.2.0",
+    "typer>=0.27.2",
+]
+
+[project.scripts]
+mi = "meeting_indexer.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.8,<1"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pyright]
+include = ["src", "tests"]
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+]
