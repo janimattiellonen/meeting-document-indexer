@@ -254,6 +254,9 @@ Indexes: GIN on every `search_tsv`, HNSW (`vector_cosine_ops`) on every `embeddi
 GIN `gin_trgm_ops` on `topics.title` and `person_aliases.alias`, B-tree on `meetings.meeting_date`.
 
 **Board members for a year** come from `attendance` of `board` meetings in that year, with roles.
+"That year" means the board's term, taken from the meeting number ("1/2026"), not the meeting date:
+a new board can hold its first meeting before the year starts (meeting 1/2026 was held on
+8.12.2025).
 Later, general meetings (syyskokous) can also be extracted for *elected* officials, which is
 more authoritative than attendance.
 
@@ -265,7 +268,8 @@ more authoritative than attendance.
 
 1. **Discover** supported files and skip Office lock files (`~$…`).
 2. **Hash** the file. Skip it if `sha256`, `extractor_version` and the model are unchanged
-   (`--force` overrides). Failed documents are always retried.
+   (`--force` overrides). Failed and timed-out documents are *not* retried automatically; see
+   "Limits and failures" below.
 3. **Extract text per page.** Pages are kept separate so topics can be linked to a page. If
    there's no text layer, set `status = no_text` (OCR comes in Phase 8).
 4. **LLM extraction** with the Pydantic schema as `format`. Page markers (`[sivu 2]`) are
@@ -294,9 +298,40 @@ more authoritative than attendance.
    Connections use autocommit, so each document's transaction commits on its own. Otherwise
    psycopg's implicit transaction would hold every document until the run ends.
 
-- Each file runs in its own step: one failure marks that document `failed` and the run continues.
 - Progress is shown with the elapsed time per document and an estimated time remaining.
-  At ~80 s/document, a few hundred documents is an overnight job.
+  At ~90 s/document, a few hundred documents is an overnight job.
+
+### Limits and failures
+
+One document must never hold up a run, and nothing a run skips may go unrecorded.
+
+- **Hard time limit per document: 10 minutes by default** (`DOC_TIME_LIMIT_SECONDS`, or
+  `mi index --time-limit N`). Reading the file and the LLM extraction run in a worker process
+  (`limits.py`), which is killed when the limit is reached. That holds whichever step hangs,
+  including C code such as PyMuPDF. When the worker is killed, Ollama cancels the request too
+  ("Request terminated … context canceled" in its log), so nothing keeps generating in the
+  background. 10 minutes is ~6× a normal document and covers the longest legitimate generation
+  (the 8,192-token output cap at ~21 tokens/s ≈ 7 min).
+- **A document that fails or times out is recorded and the run continues.** Its row gets status
+  `failed` or `timed_out`, the error, the attempt count, the time of the last attempt and how
+  long it took. Any earlier extraction of the document is kept.
+- **No automatic retries.** Retrying would spend the full limit on the same file on every run.
+  Failed and timed-out documents are retried when the file changes, with
+  `mi index --retry-failed`, or with `mi reindex <path>`.
+- **The run stops only for problems that aren't about one file:**
+  - Ollama doesn't respond after a failure, or
+  - 3 documents in a row fail (`MAX_CONSECUTIVE_FAILURES`), which points at the system.
+
+  Without this, a hung Ollama would cost the full limit for every remaining document.
+- **The gaps are always visible:**
+  - Every file is registered as `pending` before processing starts, so files a stopped or
+    crashed run never reached stay listed.
+  - `mi status` lists pending, timed-out, failed and scanned documents. It also compares the
+    disk with the database: files not registered yet, files changed since indexing, and files
+    that are gone from disk.
+- **Every run writes a log file** to `data/logs/index-<time>.log` (gitignored). It records each
+  document's outcome, full error tracebacks (including those from the worker process), and the
+  names of documents not reached if the run stopped.
 - Other commands: `mi status` (counts per status, lists failed and scanned documents),
   `mi reindex <path>`, `mi show <path>` (prints one document's extraction), and
   `mi people list|merge <a> <b>` (Phase 6).
