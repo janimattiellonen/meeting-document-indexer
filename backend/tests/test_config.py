@@ -64,3 +64,23 @@ def test_remote_database_in_key_value_format_is_rejected(url: str) -> None:
     with pytest.raises(ValidationError, match=r"db\.example\.com") as error:
         make(database_url=url)
     assert "secret123" not in str(error.value)
+
+
+# libpq connects to hostaddr instead of host when both are given.
+@pytest.mark.parametrize(
+    "url",
+    [
+        "host=localhost hostaddr=203.0.113.5 dbname=x password=secret123",
+        "postgresql://u:secret123@127.0.0.1/x?hostaddr=203.0.113.5",
+        "host=localhost,localhost hostaddr=127.0.0.1,203.0.113.5 dbname=x",
+    ],
+)
+def test_remote_database_hostaddr_is_rejected(url: str) -> None:
+    with pytest.raises(ValidationError, match=r"203\.0\.113\.5") as error:
+        make(database_url=url)
+    assert "secret123" not in str(error.value)
+
+
+@pytest.mark.parametrize("url", ["host=localhost hostaddr=127.0.0.1 dbname=x", "hostaddr=::1 dbname=x"])
+def test_local_database_hostaddr_is_accepted(url: str) -> None:
+    assert make(database_url=url).database_url == url

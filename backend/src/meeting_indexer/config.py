@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # Hosts that mean "this machine". host.docker.internal is the Mac host as seen from a container.
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
+LOCAL_ADDRESSES = {"127.0.0.1", "::1"}
 
 
 class Settings(BaseSettings):
@@ -51,10 +52,14 @@ class Settings(BaseSettings):
     def database_must_be_local(cls, value: str) -> str:
         # Accepts both libpq formats: "postgresql://user@host/db" and "host=... dbname=...".
         try:
-            hosts = str(conninfo_to_dict(value).get("host") or "localhost").split(",")
+            params = conninfo_to_dict(value)
         except psycopg.ProgrammingError:
             raise ValueError("is not a valid PostgreSQL connection string") from None
+        hosts = str(params.get("host") or "localhost").split(",")
         remote = [h for h in hosts if h not in LOCAL_HOSTS and not h.startswith("/")]  # "/…": a local socket
+        # libpq connects to hostaddr (a numeric address) instead of host when both are given.
+        addresses = str(params.get("hostaddr") or "").split(",")
+        remote += [a for a in addresses if a and a not in LOCAL_ADDRESSES]
         if remote:
             raise ValueError(f"must point to this machine, got host {remote[0]!r}")
         return value
