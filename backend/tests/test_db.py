@@ -24,4 +24,14 @@ def test_document_counts_groups_by_status(conn: psycopg.Connection) -> None:
         " ('c.pdf', 'z', 'pdf', 'failed')"
     )
     assert db.document_counts(conn) == {"indexed": 2, "failed": 1}
-    assert db.documents_with_status(conn, "failed") == [("c.pdf", None)]
+    assert [(d.rel_path, d.status) for d in db.problem_documents(conn)] == [("c.pdf", "failed")]
+
+
+def test_register_pending_adds_only_new_files(conn: psycopg.Connection) -> None:
+    assert db.register_pending(conn, [("a.pdf", "pdf"), ("b.doc", "doc")]) == 2
+    assert db.register_pending(conn, [("a.pdf", "pdf"), ("c.pdf", "pdf")]) == 1
+    assert db.stored_hashes(conn) == {
+        "a.pdf": (None, "pending"),
+        "b.doc": (None, "pending"),
+        "c.pdf": (None, "pending"),
+    }

@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     ollama_host: str = "http://127.0.0.1:11434"
     llm_model: str = "qwen3.8:27b-mlx"
     embed_model: str = "bge-m3"
+    # Hard limit per document for reading it and the LLM extraction. A normal document takes ~90 s;
+    # the LLM output cap (8192 tokens) is reached in ~7 min at ~21 tokens/s.
+    doc_time_limit_seconds: int = 600
+    # Stop a run after this many documents fail in a row: that points at the system, not the files.
+    max_consecutive_failures: int = 3
 
     @field_validator("docs_root")
     @classmethod
