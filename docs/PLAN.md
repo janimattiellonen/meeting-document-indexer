@@ -3,10 +3,22 @@
 Searchable index of Puskasoturit ry meeting minutes (PDF / Word). Everything runs on the local
 machine; no document content ever leaves it.
 
-**Status:** Phase 2 (persisted indexing) implemented on branch `phase-2-indexing` – `mi index`,
-`mi reindex`, `mi show`, `mi eval`, `mi status`. Verified on the one real document so far (100% against
-its golden file). Still open for Phase 2: a run over the real corpus, especially old `.doc` files and
-2006-era PDFs, and more golden files.
+**Status:**
+- **Phase 2** (persisted indexing): done on branch `phase-2-indexing`; still waiting for a run over the full set of documents.
+- **Phases 3–4 (thin slice):** on branch `phase-3-4-search-ui`:
+  - a search API (Postgres full-text search, prefix matching, stemmed or as typed);
+  - the React Router SPA with search, a meeting list, and a meeting page with the PDF.
+  - Voikko lemmatisation (§8) is still to do.
+
+**Running it locally:**
+
+```bash
+docker compose up -d                   # database
+cd backend && uv run mi serve          # API on 127.0.0.1:8000
+cd frontend && pnpm dev                # app on http://127.0.0.1:5180
+```
+
+After an API change, `pnpm gen:api` in `frontend/` regenerates the TypeScript types.
 
 ### Known facts about the corpus
 
@@ -151,10 +163,10 @@ meeting-indexer/
 | `db` | `pgvector/pgvector:pg17` | `127.0.0.1:5434:5432` | Named volume `pgdata`, healthcheck `pg_isready` |
 | `migrate` | `ghcr.io/amacneil/dbmate` | – | Runs `dbmate up`, `depends_on: db (healthy)` |
 | `api` | `backend/Dockerfile` | `127.0.0.1:8000:8000` | Profile `app`; docs dir mounted `:ro` at `/docs` |
-| `web` | `frontend/Dockerfile` (static build served by nginx or by FastAPI) | `127.0.0.1:5173:80` | Profile `app` |
+| `web` | `frontend/Dockerfile` (static build served by nginx or by FastAPI) | `127.0.0.1:5180:80` | Profile `app` |
 
 - **Development:** only `db` and `migrate` run in Docker. API, indexer and frontend run natively
-  (`uv run …`, `pnpm dev`) for a fast feedback loop. Vite proxies `/api` to `localhost:8000`,
+  (`uv run …`, `pnpm dev`) for a fast feedback loop. Vite (port 5180, since 5173 is used by other projects here) proxies `/api` to `localhost:8000`,
   so there's no CORS setup.
 - **"Appliance" mode:** `docker compose --profile app up` runs everything except Ollama. Inside
   compose, the API reaches the database as host `db`, so the local-host check in `config.py`
