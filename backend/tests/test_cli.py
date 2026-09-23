@@ -59,13 +59,33 @@ def test_a_changed_file_is_listed_whatever_its_last_outcome(root: Path, state: d
     stored: dict[str, tuple[str | None, db.DocumentStatus]] = {
         "2019/hallitus-3-2019.pdf": (sha256(path), state)
     }
-    assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == []
+    assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == ([], [])
 
     path.write_bytes(b"%PDF korjattu")
-    assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == ["2019/hallitus-3-2019.pdf"]
+    assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == (["2019/hallitus-3-2019.pdf"], [])
 
 
 def test_pending_and_missing_files_are_not_listed_as_changed(root: Path) -> None:
     path = root / "2019" / "hallitus-3-2019.pdf"
     stored = {"2019/hallitus-3-2019.pdf": (None, "pending"), "2019/poistettu.pdf": ("x", "indexed")}
-    assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == []
+    assert changed_files(stored, {"2019/hallitus-3-2019.pdf": path}) == ([], [])
+
+
+def test_an_unreadable_file_is_listed_instead_of_stopping_the_comparison(root: Path) -> None:
+    locked, readable = root / "2019" / "hallitus-3-2019.pdf", root / "2019" / "hallitus-4-2019.pdf"
+    readable.write_bytes(b"%PDF")
+    stored: dict[str, tuple[str | None, db.DocumentStatus]] = {
+        "2019/hallitus-3-2019.pdf": (sha256(locked), "failed"),
+        "2019/hallitus-4-2019.pdf": ("vanha", "indexed"),
+    }
+    locked.chmod(0)
+    try:
+        changed, unreadable = changed_files(
+            stored, {"2019/hallitus-3-2019.pdf": locked, "2019/hallitus-4-2019.pdf": readable}
+        )
+    finally:
+        locked.chmod(0o644)
+
+    assert changed == ["2019/hallitus-4-2019.pdf"]
+    [line] = unreadable
+    assert line.startswith("2019/hallitus-3-2019.pdf: PermissionError")

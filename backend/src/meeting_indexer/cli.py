@@ -81,14 +81,21 @@ def print_section(title: str, lines: list[str]) -> None:
 
 def changed_files(
     stored: Mapping[str, tuple[str | None, db.DocumentStatus]], on_disk: Mapping[str, Path]
-) -> list[str]:
-    """Registered files whose content differs from the version last processed, whatever the outcome
-    was (indexed, no text, failed or timed out). Pending files have no hash yet."""
-    return sorted(
-        rel
-        for rel, (digest, _) in stored.items()
-        if digest is not None and rel in on_disk and sha256(on_disk[rel]) != digest
-    )
+) -> tuple[list[str], list[str]]:
+    """(changed, unreadable): registered files whose content differs from the version last processed,
+    whatever the outcome was (indexed, no text, failed or timed out), and "path: error" for files that
+    couldn't be read to compare. Pending files have no hash yet."""
+    changed: list[str] = []
+    unreadable: list[str] = []
+    for rel, (digest, _) in sorted(stored.items()):
+        if digest is None or rel not in on_disk:
+            continue
+        try:
+            if sha256(on_disk[rel]) != digest:
+                changed.append(rel)
+        except OSError as e:  # one unreadable file must not hide the rest of the status
+            unreadable.append(f"{rel}: {type(e).__name__}: {e.strerror or e}")
+    return changed, unreadable
 
 
 @app.command()
@@ -148,9 +155,9 @@ def status() -> None:
     )
     print_section("No text layer, probably scanned (needs OCR)", [p.rel_path for p in by_status["no_text"]])
     print_section("Not registered yet (added after the last run)", sorted(set(on_disk) - set(stored)))
-    print_section(
-        "Changed since last processed (re-extracted on the next run)", changed_files(stored, on_disk)
-    )
+    changed, unreadable = changed_files(stored, on_disk)
+    print_section("Changed since last processed (re-extracted on the next run)", changed)
+    print_section("Can't be read, so not compared with the database", unreadable)
     print_section("In the database but no longer on disk", sorted(set(stored) - set(on_disk)))
 
     raise typer.Exit(0 if healthy else 1)
