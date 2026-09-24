@@ -40,7 +40,7 @@ data/documents/ ──► indexer (mi index) ──► Ollama (local LLM)
 - **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**, for the database.
 - **[Ollama](https://ollama.com)** with:
   - a language model: `qwen3.8:27b-mlx` by default, set with `LLM_MODEL` in `.env`;
-  - the `bge-m3` embedding model, used by the planned meaning-based search.
+  - the `bge-m3` embedding model. Nothing uses it yet, but `mi status` checks for it.
 - **[uv](https://docs.astral.sh/uv/)**, for Python. It installs Python 3.13 by itself.
 - **Node.js 22 and [pnpm](https://pnpm.io)**, for the web app.
 - **Voikko**, which gives Finnish base forms for search (`brew install libvoikko`).
@@ -54,10 +54,14 @@ cd meeting-document-indexer
 
 # Tools
 brew install libvoikko
-ollama pull bge-m3                      # and your LLM, if it isn't installed yet
+ollama pull qwen3.8:27b-mlx             # the LLM: must match LLM_MODEL in .env
+ollama pull bge-m3                      # embeddings: must match EMBED_MODEL in .env
 
 # Settings: a copy of .env.example with a random database password (.env is never committed)
 sed "s/change-me/$(openssl rand -hex 16)/g" .env.example > .env
+
+# The documents folder (data/ is never committed, so a fresh clone doesn't have it)
+mkdir -p data/documents
 
 # Database: starts PostgreSQL and creates the tables
 docker compose up -d
@@ -112,7 +116,8 @@ uv run mi status         # what's indexed, pending, failed, timed out or scanned
 - **When a run stops:** only for problems that aren't about one file, such as Ollama not responding
   or 3 failures in a row. Files it didn't reach stay listed as pending in `mi status`.
 - **Logs:** each run writes one to `data/logs/`.
-- **Scans:** scanned PDFs without a text layer are listed as "no text layer". OCR is planned.
+- **Scans:** scanned PDFs without a text layer are listed as "no text layer", and they can't be
+  searched until OCR is built.
 
 Check one document's extraction:
 
@@ -154,8 +159,8 @@ Open **http://127.0.0.1:5180**. The dev server forwards `/api` to the API.
 
 The extracted data can contain mistakes. The original document is always the source.
 
-**A production build** is a static app: `pnpm build` writes it to `frontend/build/client/`. Serving it
-together with the API is planned (see `docs/PLAN.md`, Phase 8). For now, use `pnpm dev`.
+**A production build** is a static app: `pnpm build` writes it to `frontend/build/client/`. Nothing
+serves it together with the API yet, so use `pnpm dev`.
 
 ## Command reference
 
@@ -165,19 +170,22 @@ Run the `mi` commands from `backend/`, as `uv run mi …`. Add `-v` for detailed
 |---|---|
 | `mi status` | Checks the setup. Lists pending, failed, timed-out and scanned documents, and compares the disk with the database |
 | `mi index [paths…]` | Extracts new and changed documents. `--retry-failed`, `--time-limit N`, `--force` |
-| `mi reindex <paths…>` | Re-extracts documents even if they haven't changed |
+| `mi reindex <paths…>` | Re-extracts documents even if they haven't changed. `--time-limit N` |
 | `mi show <file>` | Prints what was extracted from a document |
 | `mi eval` | Measures extraction accuracy against hand-checked files in `data/eval/`. `--init <file>` writes a draft to correct |
 | `mi relemmatize` | Computes the search base forms for text already in the database, without the LLM. `--all` recomputes everything |
-| `mi serve` | Runs the API on `127.0.0.1:8000` |
+| `mi serve` | Runs the API on `127.0.0.1:8000`. `--port N` |
 | `mi openapi <file>` | Writes the API schema, used to generate the web app's types |
 
-Settings live in `.env` (see [`.env.example`](.env.example)):
-- **Documents folder:** `DOCS_ROOT`.
+Settings live in `.env`; [`.env.example`](.env.example) has every setting with its default:
+- **Database container:** `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_PORT`.
+- **Backend's database connection:** `DATABASE_URL`. Its password must match `POSTGRES_PASSWORD`.
+- **Ollama:** `OLLAMA_HOST`.
 - **Models:** `LLM_MODEL` and `EMBED_MODEL`.
+- **Documents folder:** `DOCS_ROOT`.
 - **Time limits:** `DOC_TIME_LIMIT_SECONDS` and `MAX_CONSECUTIVE_FAILURES`.
-- **Addresses:** the database and Ollama addresses must point to this machine; the backend refuses
-  to start otherwise.
+
+`DATABASE_URL` and `OLLAMA_HOST` must point to this machine; the backend refuses to start otherwise.
 
 ## Development
 
@@ -203,7 +211,16 @@ pnpm gen:api                     # after an API change: regenerate app/api/schem
 - **Extracted data:** stored in the Docker volume `meeting-indexer_pgdata`. It survives
   restarts and `docker compose down`, but **`docker compose down -v` deletes it**.
 - **Rebuilding:** everything can be rebuilt from the documents with `mi index`, at the cost of the
-  indexing time. Database backups are planned.
+  indexing time. There are no database backups yet.
+
+## Not built yet
+
+These are planned in [`docs/PLAN.md`](docs/PLAN.md):
+- meaning-based search, which finds synonyms (*nettisivut* for *kotisivu-uudistus*);
+- people and board pages ("who was on the board in 2019");
+- answers to questions, with links to the source documents;
+- OCR for scanned documents;
+- serving the built web app together with the API, and database backups.
 
 ## Troubleshooting
 
