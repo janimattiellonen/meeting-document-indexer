@@ -4,19 +4,23 @@ Searchable index of Puskasoturit ry meeting minutes (PDF / Word). Everything run
 machine; no document content ever leaves it.
 
 **Status:**
-- **Phase 2** (persisted indexing): done on branch `phase-2-indexing`; still waiting for a run over the full set of documents.
-- **Phases 3–4 (thin slice):** on branch `phase-3-4-search-ui`:
-  - a search API (Postgres full-text search, prefix matching, stemmed or as typed);
-  - the React Router SPA with search, a meeting list, and a meeting page with the PDF.
-  - Voikko lemmatisation (§8) is still to do.
+- **Phases 0–2 are merged.** Phase 2 is still waiting for a run over the full set of documents.
+- **Phase 3 (search API):**
+  - built: full-text search with Voikko base forms (§8), the meeting list and details, and the original documents;
+  - still to do: the board endpoint (with Phase 6).
+- **Phase 4 (frontend):** search, a meeting list, and a meeting page with the PDF.
 
 **Running it locally:**
 
 ```bash
+brew install libvoikko                 # once: Finnish base forms for search
 docker compose up -d                   # database
 cd backend && uv run mi serve          # API on 127.0.0.1:8000
 cd frontend && pnpm dev                # app on http://127.0.0.1:5180
 ```
+
+`mi status` reports text indexed without base forms, for example after upgrading to lemma search.
+`mi relemmatize` fills them in from the stored text, without the LLM.
 
 After an API change, `pnpm gen:api` in `frontend/` regenerates the TypeScript types.
 
@@ -105,7 +109,7 @@ What this means for the plan:
 | Embeddings | `bge-m3` via Ollama (1024 dims) | Multilingual, good Finnish support |
 | Reranker | `BAAI/bge-reranker-v2-m3` via `sentence-transformers` (MPS) | Phase 5; Ollama can't run cross-encoders |
 | Database | PostgreSQL 17 + `pgvector` + `pg_trgm` | Docker image `pgvector/pgvector:pg17` |
-| Full-text search | Postgres `finnish` text search config | Stems regular inflections only – see §8 |
+| Full-text search | Postgres `finnish` config + Voikko base forms (`libvoikko`) | See §8 |
 | Migrations | `dbmate`, plain SQL files | Language-agnostic, runs as a compose service |
 | Backend | Python 3.13, `uv`, FastAPI, `psycopg` 3, Pydantic v2 | Hand-written SQL; search queries are too specific for an ORM |
 | Document text | PyMuPDF, python-docx, macOS `textutil` (.doc/.rtf/.odt) | OCR later with `ocrmypdf` |
@@ -168,7 +172,8 @@ meeting-indexer/
 - **Development:** only `db` and `migrate` run in Docker. API, indexer and frontend run natively
   (`uv run …`, `pnpm dev`) for a fast feedback loop. Vite (port 5180, since 5173 is used by other projects here) proxies `/api` to `localhost:8000`,
   so there's no CORS setup.
-- **"Appliance" mode:** `docker compose --profile app up` runs everything except Ollama. Inside
+- **"Appliance" mode:** `docker compose --profile app up` runs everything except Ollama. The API
+  image needs libvoikko and its Finnish dictionary (Debian: `libvoikko1`, `voikko-fi`). Inside
   compose, the API reaches the database as host `db`, so the local-host check in `config.py`
   must also accept the compose service name then.
 - Ports 5432 and 5433 are already used by other containers on this machine, hence 5434.
@@ -352,10 +357,14 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 
 ## 8. Search
 
-- **Full-text (built in the Phase 3–4 slice, `search/__init__.py`):**
-  - Each query word (letters, digits and inner hyphens, at least two characters) is matched as a
-    prefix in two forms: stemmed (`to_tsquery('finnish', 'word:*')`) and as typed (`simple`).
-    The stemmer turns *verkko* into *verko*, which is not a prefix of *verkkosivut*.
+- **Full-text (built, `search/`):**
+  - Each query word (letters, digits and inner hyphens, at least two characters) matches in any
+    of three ways:
+    - by its **Voikko base form**, against the base forms and compound parts stored in `lemma_tsv`
+      (see the next point);
+    - as a prefix **stemmed** by Postgres (`to_tsquery('finnish', 'word:*')`);
+    - as a prefix **as typed** (`simple`). The stemmer turns *verkko* into *verko*, which is not a
+      prefix of *verkkosivut*. This also covers names Voikko doesn't know (*Kvarnbäck* → *Kvarnbäckin*).
   - All words must match. Finnish stopwords (*ja*, *on*) are dropped, because the index leaves
     them out.
   - There are no search operators: `OR`, quotes and a leading `-` are read as ordinary words.
@@ -363,25 +372,37 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
   - Searches `topics` (title, summary, decisions) and `chunks` (the raw text), ranked with
     `ts_rank_cd`; a match in the raw text counts half. `meetings.search_tsv` (meeting title and
     summary) is not queried yet.
-- **Known limitation, found in Phase 1:** the Snowball `finnish` stemmer handles regular endings
-  (*verkkosivut* = *verkkosivuilla*), but misses stem changes and consonant gradation:
-  *hallitus* ≠ *hallituksen*, *kokous* ≠ *kokouksessa*, *kisa* ≠ *kisoille*,
-  *paita* ≠ *paidat* ≠ *paitoja*. That affects many everyday words.
-  *Fix (Phase 3):* lemmatise text with **Voikko** (`libvoikko`, a local Finnish morphological
-  analyser, available via Homebrew and as a Python binding). Lemmatise both the indexed text and
-  the query to base forms, and store the result in `tsvector` columns using the `simple` config.
-  Compound words are split into their parts as well (*kotisivu-uudistus* → *kotisivu*,
-  *uudistus*). This needs a migration that changes the generated `search_tsv` columns into
-  ordinary columns filled by the indexer. Embeddings (Phase 5) and trigram matching cover the
-  cases lemmatisation still misses.
+- **Voikko base forms (`search/lemmas.py`):**
+  - **Why:** the Snowball `finnish` stemmer, found in Phase 1, handles regular endings
+    (*verkkosivut* = *verkkosivuilla*) but misses stem changes and consonant gradation:
+    *hallitus* ≠ *hallituksen*, *kokous* ≠ *kokouksessa*, *kisa* ≠ *kisoille*,
+    *paita* ≠ *paitoja*. Voikko (`libvoikko`, a local Finnish morphological analyser) gives the
+    base form of each word.
+  - **Documents** are indexed with base forms *and* compound parts:
+    *seuramestaruuskisoille* → *seuramestaruuskisa*, *seura*, *mestaruus*, *kisa*;
+    *kotisivu-uudistus* → also *kotisivu*, *uudistus*, *koti*, *sivu*.
+    Derived words are not split (*luettava* doesn't give *lukea*).
+  - **Queries** use base forms only, so *kotisivut* finds *kotisivu* but not every *koti*.
+  - **Storage:** `topics.lemma_tsv` and `chunks.lemma_tsv` (`simple` config, the same weights as
+    `search_tsv`), filled by the indexer, and by `mi relemmatize` for text stored earlier.
+    Searches run against `search_tsv || lemma_tsv`, with a GIN index on that expression.
+  - **Without Voikko** the API keeps working: search logs a warning, leaves out the base-form
+    alternative and matches by the two prefix ways only. Indexing (`mi index`, `mi reindex`) and
+    `mi relemmatize` refuse to start instead, since they would store text without base forms.
+  - **Highlighting** is done in Python (`search/highlight.py`) with the same rules, because
+    `ts_headline` only knows Postgres' stemming and wouldn't mark *hallituksen* for *hallitus*.
+  - **Tested on the 4 real documents:** *hallitus*, *kokous* and *kisa* each went from 0 to 4
+    matching meetings.
+  - **Still missed:** synonyms and related wording (*nettisivut* ↔ *kotisivu-uudistus*), which
+    embeddings (Phase 5) cover.
 - **Semantic:** `embed(q)`, then cosine distance on `topics.embedding` and `chunks.embedding`.
   This catches synonyms and compound words (*nettisivut* ↔ *kotisivu-uudistus*).
 - **Hybrid:** merge both lists with Reciprocal Rank Fusion (k = 60) and group hits by meeting.
 - **Rerank (Phase 5):** the top 50 go through `bge-reranker-v2-m3`, and the top 20 are returned.
 - **Filters:** date range / year, meeting type, person (attended), has-decision.
 - **Sort:** relevance (default) or **date ascending**, which answers "when did this first come up".
-- Each hit returns the meeting, the matching topic with a highlighted snippet (`ts_headline`),
-  the page number and a document link.
+- Each hit returns the meeting, the matching topic with a highlighted snippet, the page number and
+  a document link.
 
 ---
 

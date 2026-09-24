@@ -197,6 +197,15 @@ wheels = [
 ]
 
 [[package]]
+name = "libvoikko"
+version = "4.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/12/96d70c432646ed26e33eabe114dacecc239ec471787ffca3fdfa8b1c0170/libvoikko-4.3.tar.gz", hash = "sha256:35df124f7d0a5ee8f6d4efbfc1b28613eeceb94925aebc8badd6d40d8ae3b4be", size = 9552, upload-time = "2019-11-22T19:38:53.81Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/db/ab875d42670d92f77d8e73f4799cde51f2145bbddf450f9947074fb775f7/libvoikko-4.3-py3-none-any.whl", hash = "sha256:29abe70c04a21411263c73e005e952d62f641941a7965a41d86f773253577bb1", size = 9726, upload-time = "2019-11-22T19:38:51.338Z" },
+]
+
+[[package]]
 name = "lxml"
 version = "6.1.3"
 source = { registry = "https://pypi.org/simple" }
@@ -315,6 +324,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "libvoikko" },
     { name = "ollama" },
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "pydantic" },
@@ -337,6 +347,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "libvoikko", specifier = ">=4.3" },
     { name = "ollama", specifier = ">=0.6.2" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3.6" },
     { name = "pydantic", specifier = ">=2.13.5" },

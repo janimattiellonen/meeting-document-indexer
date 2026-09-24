@@ -1,5 +1,6 @@
 """Database access."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from typing import Literal, LiteralString
@@ -234,24 +235,77 @@ def insert_attendance(
     return cur.rowcount == 1
 
 
+# Lemma columns: search/lemmas.document_lemmas gives space-separated base forms; weights as in search_tsv.
+TOPIC_LEMMA_TSV = """
+    setweight(to_tsvector('simple', %(title_lemmas)s), 'A') ||
+    setweight(to_tsvector('simple', %(decisions_lemmas)s), 'B') ||
+    setweight(to_tsvector('simple', %(summary_lemmas)s), 'C')
+"""
+
+
 def insert_topics(conn: psycopg.Connection, meeting_id: int, topics: list[dict]) -> None:
+    """topics: the columns plus title_lemmas, decisions_lemmas and summary_lemmas."""
     with conn.cursor() as cur:
         cur.executemany(
-            """
-            INSERT INTO topics (meeting_id, ordinal, item_number, title, summary, decisions, page_no)
+            f"""
+            INSERT INTO topics (meeting_id, ordinal, item_number, title, summary, decisions, page_no,
+                                lemma_tsv, lemmatized)
             VALUES (%(meeting_id)s, %(ordinal)s, %(item_number)s, %(title)s, %(summary)s,
-                    %(decisions)s, %(page_no)s)
+                    %(decisions)s, %(page_no)s, {TOPIC_LEMMA_TSV}, true)
             """,
             [{**t, "meeting_id": meeting_id} for t in topics],
         )
 
 
-def insert_chunks(conn: psycopg.Connection, document_id: int, chunks: list[tuple[int, str]]) -> None:
+def insert_chunks(conn: psycopg.Connection, document_id: int, chunks: list[tuple[int, str, str]]) -> None:
+    """chunks: (page_no, text, lemmas of the text)."""
     with conn.cursor() as cur:
         cur.executemany(
-            "INSERT INTO chunks (document_id, ordinal, page_no, text) VALUES (%s, %s, %s, %s)",
-            [(document_id, i, page_no, text) for i, (page_no, text) in enumerate(chunks)],
+            """
+            INSERT INTO chunks (document_id, ordinal, page_no, text, lemma_tsv, lemmatized)
+            VALUES (%s, %s, %s, %s, to_tsvector('simple', %s), true)
+            """,
+            [(document_id, i, page_no, text, lemmas) for i, (page_no, text, lemmas) in enumerate(chunks)],
         )
+
+
+def unlemmatized_counts(conn: psycopg.Connection) -> tuple[int, int]:
+    """(topics, chunks) whose lemma column hasn't been computed yet."""
+    row = conn.execute(
+        """
+        SELECT (SELECT count(*) FROM topics WHERE NOT lemmatized),
+               (SELECT count(*) FROM chunks WHERE NOT lemmatized)
+        """
+    ).fetchone()
+    assert row is not None
+    return row[0], row[1]
+
+
+def relemmatize(
+    conn: psycopg.Connection, lemmatize: Callable[[str | None], str], *, only_missing: bool
+) -> int:
+    """Recompute the lemma columns from the stored text. Returns the number of rows updated."""
+    condition = "WHERE NOT lemmatized" if only_missing else ""
+    topics = conn.execute(f"SELECT id, title, decisions, summary FROM topics {condition}").fetchall()
+    chunks = conn.execute(f"SELECT id, text FROM chunks {condition}").fetchall()
+    with conn.transaction(), conn.cursor() as cur:
+        cur.executemany(
+            f"UPDATE topics SET lemma_tsv = {TOPIC_LEMMA_TSV}, lemmatized = true WHERE id = %(id)s",
+            [
+                {
+                    "id": topic_id,
+                    "title_lemmas": lemmatize(title),
+                    "decisions_lemmas": lemmatize(decisions),
+                    "summary_lemmas": lemmatize(summary),
+                }
+                for topic_id, title, decisions, summary in topics
+            ],
+        )
+        cur.executemany(
+            "UPDATE chunks SET lemma_tsv = to_tsvector('simple', %s), lemmatized = true WHERE id = %s",
+            [(lemmatize(text), chunk_id) for chunk_id, text in chunks],
+        )
+    return len(topics) + len(chunks)
 
 
 @dataclass

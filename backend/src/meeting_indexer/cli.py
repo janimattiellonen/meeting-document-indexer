@@ -15,6 +15,7 @@ from meeting_indexer import db, evaluation
 from meeting_indexer.config import REPO_ROOT, get_settings
 from meeting_indexer.extract import SUPPORTED_SUFFIXES, discover, normalize_path, relative_path, sha256
 from meeting_indexer.indexer import Result, ResultStatus, RunStopped, TimeLimitedAnalyzer, index_paths
+from meeting_indexer.search import lemmas
 
 app = typer.Typer(help="Index and search meeting minutes. Everything runs locally.", no_args_is_help=True)
 
@@ -109,6 +110,7 @@ def status() -> None:
             counts = db.document_counts(conn)
             problems = db.problem_documents(conn)
             stored = db.stored_states(conn)
+            unlemmatized = db.unlemmatized_counts(conn)
         summary = ", ".join(f"{s}: {n}" for s, n in sorted(counts.items())) or "no documents indexed yet"
         report(True, "database", summary)
     except Exception as e:
@@ -125,6 +127,21 @@ def status() -> None:
             healthy &= found
     except Exception as e:
         report(False, "ollama", f"{settings.ollama_host}: {e}")
+        healthy = False
+
+    try:
+        lemmas.check_available()
+        report(True, "voikko", "Finnish base forms for search")
+    except lemmas.VoikkoUnavailable as e:
+        report(False, "voikko", str(e))
+        healthy = False
+    if any(unlemmatized):
+        topics, chunks = unlemmatized
+        report(
+            False,
+            "search",
+            f"{topics} agenda items and {chunks} text chunks lack base forms; run `mi relemmatize`",
+        )
         healthy = False
 
     if not settings.docs_root.is_dir():
@@ -213,7 +230,19 @@ STATUS_COLORS: dict[ResultStatus, str] = {
 }
 
 
+def require_voikko() -> None:
+    """Exits with the installation instructions if Voikko can't be loaded."""
+    try:
+        lemmas.check_available()
+    except lemmas.VoikkoUnavailable as e:
+        typer.echo(str(e))
+        raise typer.Exit(1) from None
+
+
 def run_index(paths: list[Path] | None, force: bool, retry_failed: bool, time_limit: int | None) -> None:
+    # Checked before any extraction: storing a document needs its base forms, so without Voikko every
+    # document would fail only after its slow LLM extraction.
+    require_voikko()
     settings = get_settings()
     files = resolve_targets(paths, settings.docs_root)
     if not files:
@@ -414,6 +443,22 @@ def eval_command(
             f"\n{len(scored)} documents: fields correct {percent(fields)}, "
             f"average recall (people, topics) {percent(recall)}"
         )
+
+
+@app.command()
+def relemmatize(
+    all_rows: Annotated[
+        bool, typer.Option("--all", help="Recompute every row, not only those still missing base forms")
+    ] = False,
+) -> None:
+    """Compute the search base forms (Voikko) for text already in the database. No LLM involved.
+
+    Needed once after upgrading to lemma search, and with --all after a change to search/lemmas.py.
+    """
+    require_voikko()
+    with db.connect() as conn:
+        updated = db.relemmatize(conn, lemmas.document_lemmas, only_missing=not all_rows)
+    typer.echo(f"Updated {updated} rows.")
 
 
 @app.command()
