@@ -268,6 +268,7 @@ class PersonRow:
     meetings: int  # attended
     first_year: int | None
     last_year: int | None
+    spellings: list[str]  # every way the minutes write the name
 
 
 def list_people(conn: psycopg.Connection, query: str | None = None) -> list[PersonRow]:
@@ -279,7 +280,9 @@ def list_people(conn: psycopg.Connection, query: str | None = None) -> list[Pers
         f"""
         SELECT p.id, p.canonical_name,
                count(DISTINCT ({db.SAME_MINUTES})) FILTER (WHERE a.status = 'present'),
-               min(extract(year FROM m.meeting_date))::int, max(extract(year FROM m.meeting_date))::int
+               min(extract(year FROM m.meeting_date))::int, max(extract(year FROM m.meeting_date))::int,
+               coalesce((SELECT array_agg(pa.alias ORDER BY lower(pa.alias)) FROM person_aliases pa
+                         WHERE pa.person_id = p.id), ARRAY[]::text[])
         FROM people p
         JOIN attendance a ON a.person_id = p.id
         JOIN meetings m ON m.id = a.meeting_id
@@ -358,11 +361,9 @@ def suggest(conn: psycopg.Connection) -> list[Suggestion]:
     "Andy Esimerkki" who is also written "Antti Esimerkki".
     """
     people = list_people(conn)
-    spellings: dict[int, set[str]] = defaultdict(set)
-    for person_id, alias in conn.execute("SELECT person_id, alias FROM person_aliases"):
-        spellings[person_id].add(display_name(alias).casefold())
-    for p in people:
-        spellings[p.id].add(p.name.casefold())
+    spellings = {
+        p.id: {p.name.casefold(), *(display_name(s).casefold() for s in p.spellings)} for p in people
+    }
     suggestions: list[Suggestion] = []
     for i, a in enumerate(people):
         for b in people[i + 1 :]:

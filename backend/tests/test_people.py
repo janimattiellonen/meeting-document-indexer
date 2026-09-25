@@ -194,7 +194,9 @@ def test_suggestions_include_initials_first_names_and_typos(conn: psycopg.Connec
 def test_list_people_matches_any_spelling(conn: psycopg.Connection) -> None:
     add_meeting(conn, "2012-01-10", [("Kvarnbäck, Qwertix", "present"), ("Liisa Virtanen", "absent")])
     found = people.list_people(conn, "kvarnbäck, q")
-    assert [(p.name, p.meetings, p.first_year) for p in found] == [("Qwertix Kvarnbäck", 1, 2012)]
+    assert [(p.name, p.meetings, p.first_year, p.spellings) for p in found] == [
+        ("Qwertix Kvarnbäck", 1, 2012, ["Kvarnbäck, Qwertix"])
+    ]
     assert people.list_people(conn, "100%") == []
 
 

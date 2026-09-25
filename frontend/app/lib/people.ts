@@ -33,11 +33,16 @@ export function attendance(present: number, meetings: number): string {
   return `${present}/${meetings}`;
 }
 
-/** People whose name contains every word of the filter, ignoring case. */
-export function filterByName<T extends { name: string }>(people: T[], filter: string): T[] {
+/** People whose name, or one of its spellings in the minutes, contains every word of the filter, ignoring case. */
+export function filterByName<T extends { name: string; spellings?: string[] }>(
+  people: T[],
+  filter: string,
+): T[] {
   const words = filter.toLocaleLowerCase("fi").split(/\s+/).filter(Boolean);
-  return people.filter((p) => {
-    const name = p.name.toLocaleLowerCase("fi");
-    return words.every((w) => name.includes(w));
-  });
+  return people.filter((p) =>
+    [p.name, ...(p.spellings ?? [])].some((spelling) => {
+      const name = spelling.toLocaleLowerCase("fi");
+      return words.every((w) => name.includes(w));
+    }),
+  );
 }

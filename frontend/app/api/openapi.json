@@ -1102,6 +1102,13 @@
             ],
             "title": "Last Year"
           },
+          "spellings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Spellings"
+          },
           "board_years": {
             "items": {
               "type": "integer"
@@ -1117,6 +1124,7 @@
           "meetings",
           "first_year",
           "last_year",
+          "spellings",
           "board_years"
         ],
         "title": "PersonSummary"

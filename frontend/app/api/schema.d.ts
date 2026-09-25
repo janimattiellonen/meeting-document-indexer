@@ -386,6 +386,8 @@ export interface components {
             first_year: number | null;
             /** Last Year */
             last_year: number | null;
+            /** Spellings */
+            spellings: string[];
             /** Board Years */
             board_years: number[];
         };

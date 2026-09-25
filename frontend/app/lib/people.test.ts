@@ -35,6 +35,16 @@ describe("filterByName", () => {
     expect(filterByName(people, "  ")).toEqual(people);
     expect(filterByName(people, "liisa")).toEqual([]);
   });
+
+  it("matches any spelling of the name, such as a nickname", () => {
+    const spelled = [
+      { name: "Antti Esimerkki", spellings: ["Antti (Andy) Esimerkki", "Esimerkki, Antti"] },
+      { name: "Teppo Testaaja", spellings: ["Teppo Testaaja"] },
+    ];
+    expect(filterByName(spelled, "andy").map((p) => p.name)).toEqual(["Antti Esimerkki"]);
+    // Every word has to be in the same spelling.
+    expect(filterByName(spelled, "andy teppo")).toEqual([]);
+  });
 });
 
 describe("yearSpan", () => {
