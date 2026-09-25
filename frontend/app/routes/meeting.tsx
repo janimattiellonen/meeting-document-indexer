@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { api, documentUrl, type MeetingView, orThrow, type TopicView } from "~/api/client";
-
-type Attendee = MeetingView["attendees"][number];
 import { formatDate, formatTime, meetingTypeLabel } from "~/lib/format";
 
 import type { Route } from "./+types/meeting";
+
+type Attendee = MeetingView["attendees"][number];
 
 export function meta({ loaderData }: Route.MetaArgs) {
   return [{ title: loaderData ? `${loaderData.meeting.title} – Pöytäkirjat` : "Kokous – Pöytäkirjat" }];
