@@ -9,7 +9,7 @@ import psycopg
 import pytest
 from helpers import MODEL, PAGE_1, PAGE_2, FakeAnalyzer, fake_meeting, write_pdf
 
-from meeting_indexer import db
+from meeting_indexer import db, people
 from meeting_indexer.indexer import Analysis, RunStopped, index_file, index_paths
 from meeting_indexer.limits import run_with_time_limit
 from meeting_indexer.llm import Person
@@ -291,6 +291,23 @@ def test_run_stops_at_once_when_the_llm_service_is_down(
     assert len(stopped.value.results) == 1
     pending = [p.rel_path for p in db.problem_documents(conn) if p.status == "pending"]
     assert pending == ["2.pdf", "3.pdf", "4.pdf", "5.pdf"]
+
+
+def test_a_failing_name_refresh_does_not_hide_why_the_run_stopped(
+    conn: psycopg.Connection, root: Path, many: list[Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def lost_connection(*args: object) -> int:
+        raise psycopg.OperationalError("the connection was lost")
+
+    monkeypatch.setattr(people, "refresh_names", lost_connection)
+
+    with pytest.raises(RunStopped, match="not responding") as stopped:
+        index_paths(conn, many, root, FailingFor("1.pdf"), MODEL, service_available=lambda: False)
+    assert len(stopped.value.results) == 1
+
+    # After a complete run, the refresh failing is the error.
+    with pytest.raises(psycopg.OperationalError):
+        index_paths(conn, many, root, FakeAnalyzer(), MODEL)
 
 
 def test_every_file_is_registered_before_processing_starts(

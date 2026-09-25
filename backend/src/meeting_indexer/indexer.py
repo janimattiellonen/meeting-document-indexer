@@ -304,7 +304,14 @@ def index_paths(
                     raise RunStopped("the LLM service is not responding", results)
                 if consecutive_failures >= max_consecutive_failures:
                     raise RunStopped(f"{consecutive_failures} documents in a row failed", results)
-    finally:
-        # Names are chosen from all spellings seen, so once per run rather than per document.
-        people.refresh_names(conn)
+    except BaseException:
+        # Refresh what was indexed, but never let a second error (the connection may be the reason the
+        # run failed) replace the first: `mi refresh` can redo it.
+        try:
+            people.refresh_names(conn)
+        except psycopg.Error:
+            log.exception("could not refresh people's names after the run failed; run `mi refresh`")
+        raise
+    # Names are chosen from all spellings seen, so once per run rather than per document.
+    people.refresh_names(conn)
     return results
