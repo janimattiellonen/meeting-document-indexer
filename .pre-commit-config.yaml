@@ -27,3 +27,9 @@ repos:
         language: system
         files: ^frontend/
         pass_filenames: false
+      - id: frontend-typecheck
+        name: tsc (frontend)
+        entry: pnpm --dir frontend typecheck
+        language: system
+        files: ^frontend/
+        pass_filenames: false
