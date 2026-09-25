@@ -437,14 +437,15 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 | GET | `/api/documents/{id}/file` | Streams the original file (`inline`; path must resolve inside `DOCS_ROOT`) |
 | GET | `/api/people?q=` | People with attendance counts |
 | GET | `/api/people/{id}` | Person: roles by year, meetings attended |
-| GET | `/api/board?year=` | Board members and roles for a year |
+| GET | `/api/boards` | The years with board meetings |
+| GET | `/api/boards/{year}` | Board members and roles for a year |
 | POST | `/api/ask` | Question → answer with cited topics (Phase 7) |
 | POST | `/api/index` · GET `/api/index/status` | Start indexing from the UI and follow progress (Phase 8) |
 
 - Built so far: `/api/search` with `q` (1–200 characters), `year_from`/`year_to` (1900–2999),
   `type` and `sort` (`relevance`, `oldest`, `newest`), full-text only; `/api/meetings` without
-  filters; `/api/meetings/{id}`; `/api/documents/{id}/file`; `/api/people`, `/api/people/{id}`, `/api/boards` and `/api/boards/{year}`
-  (Phase 6: the board is under `/api/boards/{year}` instead of `?year=`). The `person` search filter isn't built.
+  filters; `/api/meetings/{id}`; `/api/documents/{id}/file`; `/api/people`, `/api/people/{id}`,
+  `/api/boards` and `/api/boards/{year}`. The `person` search filter isn't built.
 - The API binds to `127.0.0.1` only.
 - The OpenAPI schema is exported to `frontend/app/api/schema.d.ts` with a `pnpm gen:api` script.
 
