@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 SIMILARITY_THRESHOLD = 0.8
 # Nicknames and notes: "Antti (Andy) Esimerkki", "Teppo “Tepi” Testaaja", "Liisa Laine (5§ alk.)".
 ASIDES = re.compile(r"\([^)]*\)|[“”\"«»][^“”\"«»]*[“”\"«»]")
-# Keys this similar are suggested as the same person, for a typo ("Norrkoski" / "Norkoski").
+# Keys this similar are suggested as the same person, for a typo ("Esimerkki" / "Esimerki").
 SUGGEST_RATIO = 0.85
 
 
