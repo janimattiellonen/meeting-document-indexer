@@ -50,10 +50,12 @@ def test_surname_first_is_turned_around_when_voikko_knows_the_first_name() -> No
 # Against the database
 
 
-def add_meeting(conn: psycopg.Connection, day: str, attendees: list[tuple[str, str]]) -> int:
+def add_meeting(
+    conn: psycopg.Connection, day: str, attendees: list[tuple[str, str]], file_type: str = "pdf"
+) -> int:
     document_id = conn.execute(
-        "INSERT INTO documents (rel_path, file_type, status) VALUES (%s, 'pdf', 'indexed') RETURNING id",
-        (f"{day}.pdf",),
+        "INSERT INTO documents (rel_path, file_type, status) VALUES (%s, %s, 'indexed') RETURNING id",
+        (f"{day}.{file_type}", file_type),
     ).fetchone()[0]  # type: ignore[index]
     meeting_id = conn.execute(
         """
@@ -194,3 +196,20 @@ def test_list_people_matches_any_spelling(conn: psycopg.Connection) -> None:
     found = people.list_people(conn, "kvarnbäck, q")
     assert [(p.name, p.meetings, p.first_year) for p in found] == [("Qwertix Kvarnbäck", 1, 2012)]
     assert people.list_people(conn, "100%") == []
+
+
+def test_minutes_stored_twice_count_once(conn: psycopg.Connection) -> None:
+    # The same minutes as .pdf and .doc, which write the name differently.
+    add_meeting(conn, "2023-01-10", [("Liisa Keski-Virtanen", "present")])
+    add_meeting(conn, "2023-01-10", [("Liisa Keskivirtanen", "present")], file_type="doc")
+    add_meeting(conn, "2023-02-10", [("Liisa Keski-Virtanen", "present")])
+    add_meeting(conn, "2024-01-10", [("Liisa Keskivirtanen", "present")])
+    person_id = people.resolve_person(conn, "Liisa Keski-Virtanen")
+
+    assert [p.meetings for p in people.list_people(conn)] == [3]
+    detail = people.load_person(conn, person_id)
+    assert detail is not None
+    assert [str(m.meeting_date) for m in detail.meetings] == ["2024-01-10", "2023-02-10", "2023-01-10"]
+    # Counted twice, "Keskivirtanen" would be as common and win as the spelling used most recently.
+    people.refresh_names(conn)
+    assert person_names(conn) == ["Liisa Keski-Virtanen"]

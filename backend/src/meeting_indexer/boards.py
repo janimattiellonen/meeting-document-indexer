@@ -15,6 +15,8 @@ from datetime import date
 
 import psycopg
 
+from meeting_indexer import db
+
 # Marks someone attending a board meeting without being on the board.
 OUTSIDER = re.compile(
     r"ulkopuol|ei hallitukse|\bmuut?\b|vieras|kutsu|asiantuntija|ilman äänioikeutta", re.IGNORECASE
@@ -99,17 +101,17 @@ class BoardYear:
 def board_meetings(conn: psycopg.Connection, year: int | None = None) -> list[tuple[int, BoardMeeting]]:
     """(term year, meeting) for each board meeting, oldest first.
 
-    The same minutes stored twice (as .doc and .pdf) count once: one meeting per date and number.
+    The same minutes stored twice (as .doc and .pdf) count once (db.SAME_MINUTES).
     """
     rows = conn.execute(
-        """
+        f"""
         SELECT term_year, id, title, meeting_date, meeting_number FROM (
-            SELECT DISTINCT ON (term_year, meeting_date, coalesce(meeting_number, ''))
-                   term_year, id, title, meeting_date, meeting_number
-            FROM meetings
-            WHERE meeting_type = 'board' AND term_year IS NOT NULL
-              AND (%(year)s::int IS NULL OR term_year = %(year)s)
-            ORDER BY term_year, meeting_date, coalesce(meeting_number, ''), id
+            SELECT DISTINCT ON (m.term_year, {db.SAME_MINUTES})
+                   m.term_year, m.id, m.title, m.meeting_date, m.meeting_number
+            FROM meetings m
+            WHERE m.meeting_type = 'board' AND m.term_year IS NOT NULL
+              AND (%(year)s::int IS NULL OR m.term_year = %(year)s)
+            ORDER BY m.term_year, {db.SAME_MINUTES}, m.id
         ) AS distinct_meetings
         ORDER BY meeting_date NULLS LAST, id
         """,

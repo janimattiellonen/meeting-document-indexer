@@ -181,14 +181,19 @@ def refresh_names(conn: psycopg.Connection, person_ids: list[int] | None = None)
     A full name beats a first name alone however rare it is; ties go to the spelling used most recently.
     Returns how many names changed.
     """
+    # The same minutes stored twice count once: one row per person and meeting, from the first copy.
     rows = conn.execute(
-        """
-        SELECT p.id, p.canonical_name, a.name_as_written
-        FROM people p
-        JOIN attendance a ON a.person_id = p.id
-        JOIN meetings m ON m.id = a.meeting_id
-        WHERE NOT p.name_fixed AND (%(ids)s::bigint[] IS NULL OR p.id = ANY(%(ids)s))
-        ORDER BY m.meeting_date NULLS FIRST, m.id
+        f"""
+        SELECT id, canonical_name, name_as_written FROM (
+            SELECT DISTINCT ON (p.id, {db.SAME_MINUTES})
+                   p.id, p.canonical_name, a.name_as_written, m.meeting_date, m.id AS meeting_id
+            FROM people p
+            JOIN attendance a ON a.person_id = p.id
+            JOIN meetings m ON m.id = a.meeting_id
+            WHERE NOT p.name_fixed AND (%(ids)s::bigint[] IS NULL OR p.id = ANY(%(ids)s))
+            ORDER BY p.id, {db.SAME_MINUTES}, m.id
+        ) AS once
+        ORDER BY meeting_date NULLS FIRST, meeting_id
         """,
         {"ids": person_ids},
     ).fetchall()
@@ -266,10 +271,14 @@ class PersonRow:
 
 
 def list_people(conn: psycopg.Connection, query: str | None = None) -> list[PersonRow]:
-    """People with at least one meeting, by name. query matches any spelling, ignoring case."""
+    """People with at least one meeting, by name. query matches any spelling, ignoring case.
+
+    The same minutes stored twice count once.
+    """
     rows = conn.execute(
-        """
-        SELECT p.id, p.canonical_name, count(DISTINCT a.meeting_id) FILTER (WHERE a.status = 'present'),
+        f"""
+        SELECT p.id, p.canonical_name,
+               count(DISTINCT ({db.SAME_MINUTES})) FILTER (WHERE a.status = 'present'),
                min(extract(year FROM m.meeting_date))::int, max(extract(year FROM m.meeting_date))::int
         FROM people p
         JOIN attendance a ON a.person_id = p.id
@@ -318,12 +327,17 @@ def load_person(conn: psycopg.Connection, person_id: int) -> PersonDetail | None
             "SELECT alias FROM person_aliases WHERE person_id = %s ORDER BY lower(alias)", (person_id,)
         )
     ]
+    # The same minutes stored twice are listed once, from the first copy.
     meetings = conn.execute(
-        """
-        SELECT m.id, m.title, m.meeting_type, m.meeting_date, a.status, a.role, a.name_as_written
-        FROM attendance a JOIN meetings m ON m.id = a.meeting_id
-        WHERE a.person_id = %s
-        ORDER BY m.meeting_date DESC NULLS LAST, m.id DESC
+        f"""
+        SELECT id, title, meeting_type, meeting_date, status, role, name_as_written FROM (
+            SELECT DISTINCT ON ({db.SAME_MINUTES})
+                   m.id, m.title, m.meeting_type, m.meeting_date, a.status, a.role, a.name_as_written
+            FROM attendance a JOIN meetings m ON m.id = a.meeting_id
+            WHERE a.person_id = %s
+            ORDER BY {db.SAME_MINUTES}, m.id
+        ) AS once
+        ORDER BY meeting_date DESC NULLS LAST, id DESC
         """,
         (person_id,),
     ).fetchall()

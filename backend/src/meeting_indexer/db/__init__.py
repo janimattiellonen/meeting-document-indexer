@@ -19,6 +19,11 @@ COMPLETED: frozenset[DocumentStatus] = frozenset({"indexed", "no_text"})
 FAILED: frozenset[DocumentStatus] = frozenset({"failed", "timed_out"})
 
 
+# Identifies a meeting across copies of its minutes (the same minutes stored as .doc and .pdf): the same
+# type, date and number. Undated meetings are never taken for copies. Use it on `meetings m`.
+SAME_MINUTES = "m.meeting_type, coalesce(m.meeting_date::text, m.id::text), coalesce(m.meeting_number, '')"
+
+
 def returned_id(cursor: psycopg.Cursor) -> int:
     row = cursor.fetchone()
     assert row is not None, "INSERT … RETURNING returned no row"
