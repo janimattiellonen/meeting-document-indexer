@@ -4,10 +4,16 @@ from meeting_indexer.db import AttendeeView, MeetingView, TopicView
 from meeting_indexer.evaluation import golden_draft, score
 
 
+def attendee(name: str, status: str, role: str | None) -> AttendeeView:
+    return AttendeeView(name, status, role, person_id=1, person_name=name)
+
+
 def meeting(**overrides) -> MeetingView:
     fields = {
         "title": "Hallituksen kokous 3/2019",
         "meeting_type": "board",
+        "meeting_number": "3/2019",
+        "term_year": 2019,
         "meeting_date": date(2019, 4, 2),
         "start_time": time(18, 0),
         "end_time": None,
@@ -15,9 +21,9 @@ def meeting(**overrides) -> MeetingView:
         "summary": "…",
         "warnings": [],
         "attendees": [
-            AttendeeView("Maija Meikäläinen", "present", "puheenjohtaja"),
-            AttendeeView("Teppo Testaaja", "present", None),
-            AttendeeView("Liisa Laine", "absent", None),
+            attendee("Maija Meikäläinen", "present", "puheenjohtaja"),
+            attendee("Teppo Testaaja", "present", None),
+            attendee("Liisa Laine", "absent", None),
         ],
         "topics": [
             TopicView("1", "Kokouksen avaus", None, None, 1, id=1),
@@ -43,8 +49,8 @@ def test_mistakes_are_reported_per_field() -> None:
     actual = meeting(
         meeting_date=date(2019, 4, 3),
         attendees=[
-            AttendeeView("Maija Meikäläinen", "present", None),
-            AttendeeView("Keksitty Henkilö", "present", None),
+            attendee("Maija Meikäläinen", "present", None),
+            attendee("Keksitty Henkilö", "present", None),
         ],
         topics=[TopicView("1", "Kokouksen avaus.", None, None, 1, id=1)],
     )

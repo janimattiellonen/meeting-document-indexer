@@ -204,6 +204,163 @@
         }
       }
     },
+    "/api/people": {
+      "get": {
+        "summary": "List People",
+        "description": "People who attended at least one meeting. q matches any spelling of the name.",
+        "operationId": "list_people_api_people_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PersonSummary"
+                  },
+                  "title": "Response List People Api People Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/people/{person_id}": {
+      "get": {
+        "summary": "Person",
+        "operationId": "person_api_people__person_id__get",
+        "parameters": [
+          {
+            "name": "person_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Person Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/boards": {
+      "get": {
+        "summary": "Board Years",
+        "description": "The years with board meetings, oldest first.",
+        "operationId": "board_years_api_boards_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BoardYear"
+                  },
+                  "type": "array",
+                  "title": "Response Board Years Api Boards Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/boards/{year}": {
+      "get": {
+        "summary": "Board",
+        "description": "The board of a year, inferred from the attendance of that term's board meetings.",
+        "operationId": "board_api_boards__year__get",
+        "parameters": [
+          {
+            "name": "year",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2999,
+              "minimum": 1900,
+              "title": "Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/documents/{document_id}/file": {
       "get": {
         "summary": "Document File",
@@ -260,15 +417,195 @@
               }
             ],
             "title": "Role"
+          },
+          "person_id": {
+            "type": "integer",
+            "title": "Person Id"
+          },
+          "person_name": {
+            "type": "string",
+            "title": "Person Name"
           }
         },
         "type": "object",
         "required": [
           "name",
           "status",
-          "role"
+          "role",
+          "person_id",
+          "person_name"
         ],
         "title": "AttendeeView"
+      },
+      "Board": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "title": "Year"
+          },
+          "meetings": {
+            "items": {
+              "$ref": "#/components/schemas/BoardMeeting"
+            },
+            "type": "array",
+            "title": "Meetings"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/BoardMember"
+            },
+            "type": "array",
+            "title": "Members"
+          },
+          "others": {
+            "items": {
+              "$ref": "#/components/schemas/BoardMember"
+            },
+            "type": "array",
+            "title": "Others"
+          }
+        },
+        "type": "object",
+        "required": [
+          "year",
+          "meetings",
+          "members",
+          "others"
+        ],
+        "title": "Board"
+      },
+      "BoardMeeting": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "meeting_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meeting Date"
+          },
+          "meeting_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meeting Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "meeting_date",
+          "meeting_number"
+        ],
+        "title": "BoardMeeting"
+      },
+      "BoardMember": {
+        "properties": {
+          "person_id": {
+            "type": "integer",
+            "title": "Person Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "present": {
+            "type": "integer",
+            "title": "Present"
+          },
+          "absent": {
+            "type": "integer",
+            "title": "Absent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "person_id",
+          "name",
+          "roles",
+          "present",
+          "absent"
+        ],
+        "title": "BoardMember"
+      },
+      "BoardTerm": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "title": "Year"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "present": {
+            "type": "integer",
+            "title": "Present"
+          },
+          "absent": {
+            "type": "integer",
+            "title": "Absent"
+          },
+          "meetings": {
+            "type": "integer",
+            "title": "Meetings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "year",
+          "roles",
+          "present",
+          "absent",
+          "meetings"
+        ],
+        "title": "BoardTerm"
+      },
+      "BoardYear": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "title": "Year"
+          },
+          "meetings": {
+            "type": "integer",
+            "title": "Meetings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "year",
+          "meetings"
+        ],
+        "title": "BoardYear"
       },
       "HTTPValidationError": {
         "properties": {
@@ -376,6 +713,28 @@
             ],
             "title": "Meeting Type"
           },
+          "meeting_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meeting Number"
+          },
+          "term_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Year"
+          },
           "meeting_date": {
             "anyOf": [
               {
@@ -421,6 +780,8 @@
           "id",
           "title",
           "meeting_type",
+          "meeting_number",
+          "term_year",
           "meeting_date",
           "location",
           "topic_count",
@@ -446,6 +807,28 @@
               "other"
             ],
             "title": "Meeting Type"
+          },
+          "meeting_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meeting Number"
+          },
+          "term_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Year"
           },
           "meeting_date": {
             "anyOf": [
@@ -558,6 +941,8 @@
         "required": [
           "title",
           "meeting_type",
+          "meeting_number",
+          "term_year",
           "meeting_date",
           "start_time",
           "end_time",
@@ -573,6 +958,194 @@
           "page_count"
         ],
         "title": "MeetingView"
+      },
+      "PersonMeeting": {
+        "properties": {
+          "meeting_id": {
+            "type": "integer",
+            "title": "Meeting Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "meeting_type": {
+            "type": "string",
+            "enum": [
+              "board",
+              "spring_general",
+              "autumn_general",
+              "extraordinary",
+              "other"
+            ],
+            "title": "Meeting Type"
+          },
+          "meeting_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meeting Date"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "name_as_written": {
+            "type": "string",
+            "title": "Name As Written"
+          }
+        },
+        "type": "object",
+        "required": [
+          "meeting_id",
+          "title",
+          "meeting_type",
+          "meeting_date",
+          "status",
+          "role",
+          "name_as_written"
+        ],
+        "title": "PersonMeeting"
+      },
+      "PersonResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "spellings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Spellings"
+          },
+          "meetings": {
+            "items": {
+              "$ref": "#/components/schemas/PersonMeeting"
+            },
+            "type": "array",
+            "title": "Meetings"
+          },
+          "board_terms": {
+            "items": {
+              "$ref": "#/components/schemas/BoardTerm"
+            },
+            "type": "array",
+            "title": "Board Terms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "spellings",
+          "meetings",
+          "board_terms"
+        ],
+        "title": "PersonResponse"
+      },
+      "PersonSummary": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "meetings": {
+            "type": "integer",
+            "title": "Meetings"
+          },
+          "first_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Year"
+          },
+          "last_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Year"
+          },
+          "spellings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Spellings"
+          },
+          "board_years": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Board Years"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "meetings",
+          "first_year",
+          "last_year",
+          "spellings",
+          "board_years"
+        ],
+        "title": "PersonSummary"
+      },
+      "Role": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "meetings": {
+            "type": "integer",
+            "title": "Meetings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "meetings"
+        ],
+        "title": "Role"
       },
       "SearchResponse": {
         "properties": {

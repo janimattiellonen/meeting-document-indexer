@@ -202,3 +202,51 @@ def test_search_without_voikko_still_matches_by_prefix(
     results = response.json()["results"]
     assert len(results) == 2
     assert f"{MARK_START}verkkosivut{MARK_END}" in results[0]["topics"][0]["title"]
+
+
+def test_people_are_listed_with_their_board_years(client: TestClient, indexed: None) -> None:
+    listed = {p["name"]: p for p in client.get("/api/people").json()}
+
+    maija = listed["Maija Meikäläinen"]
+    assert (maija["meetings"], maija["first_year"], maija["last_year"]) == (2, 2019, 2021)
+    assert maija["board_years"] == [2019, 2021]
+    assert [p["name"] for p in client.get("/api/people", params={"q": "teppo"}).json()] == ["Teppo Testaaja"]
+
+
+def test_person_details(client: TestClient, indexed: None) -> None:
+    person_id = next(p["id"] for p in client.get("/api/people").json() if p["name"] == "Liisa Laine")
+
+    person = client.get(f"/api/people/{person_id}").json()
+
+    assert person["spellings"] == ["Liisa Laine"]
+    assert [(m["meeting_date"], m["status"]) for m in person["meetings"]] == [
+        ("2021-09-01", "absent"),
+        ("2019-04-02", "absent"),
+    ]
+    assert [(t["year"], t["present"], t["absent"], t["meetings"]) for t in person["board_terms"]] == [
+        (2019, 0, 1, 1),
+        (2021, 0, 1, 1),
+    ]
+    assert client.get("/api/people/999999").status_code == 404
+
+
+def test_board_of_a_year(client: TestClient, indexed: None) -> None:
+    assert client.get("/api/boards").json() == [{"year": 2019, "meetings": 1}, {"year": 2021, "meetings": 1}]
+
+    board = client.get("/api/boards/2019").json()
+
+    assert [m["meeting_number"] for m in board["meetings"]] == ["3/2019"]
+    assert [(m["name"], [r["name"] for r in m["roles"]]) for m in board["members"]] == [
+        ("Maija Meikäläinen", ["puheenjohtaja"]),
+        ("Teppo Testaaja", []),
+        ("Liisa Laine", []),
+    ]
+    assert client.get("/api/boards/2020").status_code == 404
+    assert client.get("/api/boards/20190").status_code == 422
+
+
+def test_meeting_attendees_link_to_people(client: TestClient, indexed: None) -> None:
+    meeting_id = client.get("/api/meetings").json()[1]["id"]
+    attendee = client.get(f"/api/meetings/{meeting_id}").json()["attendees"][0]
+    person = client.get(f"/api/people/{attendee['person_id']}").json()
+    assert person["name"] == attendee["person_name"]

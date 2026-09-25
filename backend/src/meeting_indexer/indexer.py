@@ -14,13 +14,14 @@ from typing import Literal
 
 import psycopg
 
-from meeting_indexer import db
+from meeting_indexer import db, people
 from meeting_indexer.extract import extract_pages, has_text, relative_path, sha256
 from meeting_indexer.limits import TimeLimitExceeded, run_with_time_limit
 from meeting_indexer.llm import EXTRACTOR_VERSION, Extractor, Meeting
 from meeting_indexer.normalize import (
     Warnings,
     chunk_pages,
+    classify_meeting,
     clean_name,
     clean_role,
     clean_title,
@@ -29,7 +30,6 @@ from meeting_indexer.normalize import (
     split_item_number,
     topic_pages,
 )
-from meeting_indexer.people import resolve_person
 from meeting_indexer.search.lemmas import document_lemmas
 
 log = logging.getLogger(__name__)
@@ -207,10 +207,22 @@ def store(
         extractor_version=EXTRACTOR_VERSION,
         llm_model=model,
     )
+    title = clean_title(meeting.title)
+    day = meeting_date(meeting.date, pages[0], warnings, today)
+    kind = classify_meeting(title, pages[0], day, meeting.meeting_type)
+    if kind.meeting_type != meeting.meeting_type:
+        log.info(
+            "%s: meeting type %s from the text, not %s from the model",
+            rel_path,
+            kind.meeting_type,
+            meeting.meeting_type,
+        )
     fields = {
-        "title": clean_title(meeting.title),
-        "meeting_type": meeting.meeting_type,
-        "meeting_date": meeting_date(meeting.date, pages[0], warnings, today),
+        "title": title,
+        "meeting_type": kind.meeting_type,
+        "meeting_number": kind.number,
+        "term_year": kind.term_year,
+        "meeting_date": day,
         "start_time": parse_time(meeting.start_time),
         "end_time": parse_time(meeting.end_time),
         "location": meeting.location,
@@ -225,7 +237,7 @@ def store(
             name = clean_name(person.name)
             if not name:
                 continue
-            person_id = resolve_person(conn, name)
+            person_id = people.resolve_person(conn, name)
             if not db.insert_attendance(conn, meeting_id, person_id, status, clean_role(person.role), name):
                 warnings.add(f"{name!r} is listed more than once in the attendance")
 
@@ -277,18 +289,29 @@ def index_paths(
     db.register_pending(conn, [(relative_path(p, root), p.suffix.lower()[1:]) for p in paths])
     results: list[Result] = []
     consecutive_failures = 0
-    for i, path in enumerate(paths, 1):
-        result = index_file(conn, path, root, analyze, model, force=force, retry_failed=retry_failed)
-        results.append(result)
-        if on_result:
-            on_result(i, len(paths), result)
+    try:
+        for i, path in enumerate(paths, 1):
+            result = index_file(conn, path, root, analyze, model, force=force, retry_failed=retry_failed)
+            results.append(result)
+            if on_result:
+                on_result(i, len(paths), result)
 
-        if result.status in db.COMPLETED:
-            consecutive_failures = 0
-        elif result.status in db.FAILED:
-            consecutive_failures += 1
-            if service_available is not None and not service_available():
-                raise RunStopped("the LLM service is not responding", results)
-            if consecutive_failures >= max_consecutive_failures:
-                raise RunStopped(f"{consecutive_failures} documents in a row failed", results)
+            if result.status in db.COMPLETED:
+                consecutive_failures = 0
+            elif result.status in db.FAILED:
+                consecutive_failures += 1
+                if service_available is not None and not service_available():
+                    raise RunStopped("the LLM service is not responding", results)
+                if consecutive_failures >= max_consecutive_failures:
+                    raise RunStopped(f"{consecutive_failures} documents in a row failed", results)
+    except BaseException:
+        # Refresh what was indexed, but never let a second error (the connection may be the reason the
+        # run failed) replace the first: `mi refresh` can redo it.
+        try:
+            people.refresh_names(conn)
+        except psycopg.Error:
+            log.exception("could not refresh people's names after the run failed; run `mi refresh`")
+        raise
+    # Names are chosen from all spellings seen, so once per run rather than per document.
+    people.refresh_names(conn)
     return results

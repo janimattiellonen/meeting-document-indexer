@@ -75,6 +75,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List People
+         * @description People who attended at least one meeting. q matches any spelling of the name.
+         */
+        get: operations["list_people_api_people_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/people/{person_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Person */
+        get: operations["person_api_people__person_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Board Years
+         * @description The years with board meetings, oldest first.
+         */
+        get: operations["board_years_api_boards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/boards/{year}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Board
+         * @description The board of a year, inferred from the attendance of that term's board meetings.
+         */
+        get: operations["board_api_boards__year__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/documents/{document_id}/file": {
         parameters: {
             query?: never;
@@ -107,6 +184,65 @@ export interface components {
             status: string;
             /** Role */
             role: string | null;
+            /** Person Id */
+            person_id: number;
+            /** Person Name */
+            person_name: string;
+        };
+        /** Board */
+        Board: {
+            /** Year */
+            year: number;
+            /** Meetings */
+            meetings: components["schemas"]["BoardMeeting"][];
+            /** Members */
+            members: components["schemas"]["BoardMember"][];
+            /** Others */
+            others: components["schemas"]["BoardMember"][];
+        };
+        /** BoardMeeting */
+        BoardMeeting: {
+            /** Id */
+            id: number;
+            /** Title */
+            title: string;
+            /** Meeting Date */
+            meeting_date: string | null;
+            /** Meeting Number */
+            meeting_number: string | null;
+        };
+        /** BoardMember */
+        BoardMember: {
+            /** Person Id */
+            person_id: number;
+            /** Name */
+            name: string;
+            /** Roles */
+            roles: components["schemas"]["Role"][];
+            /** Present */
+            present: number;
+            /** Absent */
+            absent: number;
+        };
+        /** BoardTerm */
+        BoardTerm: {
+            /** Year */
+            year: number;
+            /** Roles */
+            roles: components["schemas"]["Role"][];
+            /** Present */
+            present: number;
+            /** Absent */
+            absent: number;
+            /** Meetings */
+            meetings: number;
+        };
+        /** BoardYear */
+        BoardYear: {
+            /** Year */
+            year: number;
+            /** Meetings */
+            meetings: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -148,6 +284,10 @@ export interface components {
              * @enum {string}
              */
             meeting_type: "board" | "spring_general" | "autumn_general" | "extraordinary" | "other";
+            /** Meeting Number */
+            meeting_number: string | null;
+            /** Term Year */
+            term_year: number | null;
             /** Meeting Date */
             meeting_date: string | null;
             /** Location */
@@ -170,6 +310,10 @@ export interface components {
              * @enum {string}
              */
             meeting_type: "board" | "spring_general" | "autumn_general" | "extraordinary" | "other";
+            /** Meeting Number */
+            meeting_number: string | null;
+            /** Term Year */
+            term_year: number | null;
             /** Meeting Date */
             meeting_date: string | null;
             /** Start Time */
@@ -196,6 +340,63 @@ export interface components {
             file_type: string;
             /** Page Count */
             page_count: number | null;
+        };
+        /** PersonMeeting */
+        PersonMeeting: {
+            /** Meeting Id */
+            meeting_id: number;
+            /** Title */
+            title: string;
+            /**
+             * Meeting Type
+             * @enum {string}
+             */
+            meeting_type: "board" | "spring_general" | "autumn_general" | "extraordinary" | "other";
+            /** Meeting Date */
+            meeting_date: string | null;
+            /** Status */
+            status: string;
+            /** Role */
+            role: string | null;
+            /** Name As Written */
+            name_as_written: string;
+        };
+        /** PersonResponse */
+        PersonResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Spellings */
+            spellings: string[];
+            /** Meetings */
+            meetings: components["schemas"]["PersonMeeting"][];
+            /** Board Terms */
+            board_terms: components["schemas"]["BoardTerm"][];
+        };
+        /** PersonSummary */
+        PersonSummary: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Meetings */
+            meetings: number;
+            /** First Year */
+            first_year: number | null;
+            /** Last Year */
+            last_year: number | null;
+            /** Spellings */
+            spellings: string[];
+            /** Board Years */
+            board_years: number[];
+        };
+        /** Role */
+        Role: {
+            /** Name */
+            name: string;
+            /** Meetings */
+            meetings: number;
         };
         /** SearchResponse */
         SearchResponse: {
@@ -358,6 +559,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_people_api_people_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    person_api_people__person_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    board_years_api_boards_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardYear"][];
+                };
+            };
+        };
+    };
+    board_api_boards__year__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                year: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Board"];
                 };
             };
             /** @description Validation Error */

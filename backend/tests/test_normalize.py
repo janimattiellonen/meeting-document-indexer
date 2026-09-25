@@ -5,6 +5,7 @@ import pytest
 from meeting_indexer.normalize import (
     Warnings,
     chunk_pages,
+    classify_meeting,
     clean_name,
     clean_role,
     clean_title,
@@ -128,3 +129,66 @@ def test_split_item_number(title: str, expected: tuple[str | None, str]) -> None
 )
 def test_clean_title_removes_the_letterhead(title: str, expected: str) -> None:
     assert clean_title(title) == expected
+
+
+# classify_meeting: the header decides, not the model.
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        ("ESIMERKKISEURA PÖYTÄKIRJA 2/2031 KOKOUS 2/2031 - HALLITUKSEN KOKOUS Aika", "board"),
+        ("Esimerkkiseura ry Pöytäkirja 1/2031 Hallituksen järjestäytymiskokous Aika", "board"),
+        ("ESIMERKKISEURA RY PÖYTÄKIRJA 4-2/2031 Hallituksen ylimääräinen kokous", "board"),
+        ("ESIMERKKISEURA RY PÖYTÄKIRJA 3/2031 Yhdistyksen kevätkokous Aika", "spring_general"),
+        ("Syyskokouksen pöytäkirja 2.11.2031 Paikka: Seuratalo", "autumn_general"),
+        ("Ylimääräinen yhdistyksen kokous Aika 5.6.2031", "extraordinary"),
+        ("KOKOUS 5/2031 - YHDISTYKSEN KOKOUS Aika 20.4.2031", "other"),
+        # The chair of the board opening a general meeting is not a board meeting.
+        (
+            "Yhdistyksen syyskokous 2031 1. Kokouksen avaus Hallituksen puheenjohtaja avasi kokouksen",
+            "autumn_general",
+        ),
+    ],
+)
+def test_meeting_type_comes_from_the_header(header: str, expected: str) -> None:
+    kind = classify_meeting("Pöytäkirja", header, date(2019, 3, 1), "other")
+    assert kind.meeting_type == expected
+
+
+def test_title_and_model_type_are_fallbacks() -> None:
+    assert (
+        classify_meeting("Kevätkokous 2019", "Aika 1.3.2019", None, "other").meeting_type == "spring_general"
+    )
+    assert classify_meeting("Pöytäkirja", "Aika 1.3.2019", None, "board").meeting_type == "board"
+
+
+def test_meeting_number_is_read_from_the_header() -> None:
+    kind = classify_meeting("Pöytäkirja", "PÖYTÄKIRJA 4/2031 15.11.2031 Hallituksen kokous", None, "board")
+    assert kind.number == "4/2031"
+    assert classify_meeting("x", "Hallituksen kokous 12.7.2031", None, "board").number is None
+
+
+def test_board_term_year_comes_from_the_meeting_number() -> None:
+    # The new board's first meeting can be held before its year starts.
+    kind = classify_meeting(
+        "Hallituksen kokous 1/2032", "Hallituksen kokous 1/2032", date(2031, 12, 8), "board"
+    )
+    assert kind.term_year == 2032
+
+
+def test_organizing_meeting_in_the_autumn_belongs_to_the_next_board() -> None:
+    header = "Hallituksen järjestäytymiskokous 11/2031 Aika 20.12.2031"
+    assert classify_meeting("x", header, date(2031, 12, 20), "board").term_year == 2032
+    header = "Hallituksen järjestäytymiskokous 1/2031 Aika 10.1.2031"
+    assert classify_meeting("x", header, date(2031, 1, 10), "board").term_year == 2031
+
+
+def test_other_meetings_belong_to_the_year_of_their_date() -> None:
+    kind = classify_meeting("x", "PÖYTÄKIRJA 4/2031 Syyskokous 2031", date(2032, 1, 25), "autumn_general")
+    assert kind.term_year == 2032
+    assert classify_meeting("x", "Hallituksen kokous", date(2031, 7, 11), "board").term_year == 2031
+
+
+def test_names_lose_stray_list_punctuation() -> None:
+    assert clean_name(" Antti  Esimerkki, ") == "Antti Esimerkki"

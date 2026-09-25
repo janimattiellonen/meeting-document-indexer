@@ -9,10 +9,11 @@ from typing import Annotated
 
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from psycopg_pool import ConnectionPool
 
-from meeting_indexer import db, search
+from meeting_indexer import boards, db, people, search
 from meeting_indexer.config import Settings, get_settings
 from meeting_indexer.llm import MeetingType
 
@@ -63,6 +64,48 @@ def meeting(conn: Conn, meeting_id: int) -> db.MeetingView:
     found = db.load_meeting_by_id(conn, meeting_id)
     if found is None:
         raise HTTPException(404, "meeting not found")
+    return found
+
+
+@dataclass
+class PersonSummary(people.PersonRow):
+    board_years: list[int]
+
+
+@dataclass
+class PersonResponse(people.PersonDetail):
+    board_terms: list[boards.BoardTerm]
+
+
+@router.get("/people")
+def list_people(
+    conn: Conn, q: Annotated[str | None, Query(min_length=1, max_length=100)] = None
+) -> list[PersonSummary]:
+    """People who attended at least one meeting. q matches any spelling of the name."""
+    on_board = boards.members_by_year(conn)
+    return [PersonSummary(**vars(p), board_years=on_board.get(p.id, [])) for p in people.list_people(conn, q)]
+
+
+@router.get("/people/{person_id}")
+def person(conn: Conn, person_id: int) -> PersonResponse:
+    found = people.load_person(conn, person_id)
+    if found is None:
+        raise HTTPException(404, "person not found")
+    return PersonResponse(**vars(found), board_terms=boards.person_terms(conn, person_id))
+
+
+@router.get("/boards")
+def board_years(conn: Conn) -> list[boards.BoardYear]:
+    """The years with board meetings, oldest first."""
+    return boards.board_years(conn)
+
+
+@router.get("/boards/{year}")
+def board(conn: Conn, year: Annotated[int, PathParam(ge=1900, le=2999)]) -> boards.Board:
+    """The board of a year, inferred from the attendance of that term's board meetings."""
+    found = boards.board(conn, year)
+    if found is None:
+        raise HTTPException(404, "no board meetings for that year")
     return found
 
 
