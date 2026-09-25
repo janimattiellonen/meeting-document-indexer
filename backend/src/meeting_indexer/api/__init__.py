@@ -68,12 +68,7 @@ def meeting(conn: Conn, meeting_id: int) -> db.MeetingView:
 
 
 @dataclass
-class PersonSummary:
-    id: int
-    name: str
-    meetings: int  # attended
-    first_year: int | None
-    last_year: int | None
+class PersonSummary(people.PersonRow):
     board_years: list[int]
 
 
@@ -88,10 +83,7 @@ def list_people(
 ) -> list[PersonSummary]:
     """People who attended at least one meeting. q matches any spelling of the name."""
     on_board = boards.members_by_year(conn)
-    return [
-        PersonSummary(p.id, p.name, p.meetings, p.first_year, p.last_year, on_board.get(p.id, []))
-        for p in people.list_people(conn, q)
-    ]
+    return [PersonSummary(**vars(p), board_years=on_board.get(p.id, [])) for p in people.list_people(conn, q)]
 
 
 @router.get("/people/{person_id}")

@@ -265,7 +265,7 @@ def dedupe(conn: psycopg.Connection) -> list[Merged]:
 class PersonRow:
     id: int
     name: str
-    meetings: int
+    meetings: int  # attended
     first_year: int | None
     last_year: int | None
 
