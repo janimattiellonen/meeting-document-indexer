@@ -10,6 +10,7 @@ from psycopg.types.json import Jsonb
 
 from meeting_indexer.config import get_settings
 from meeting_indexer.llm import MeetingType
+from meeting_indexer.normalize import MeetingKind
 
 # The values of documents.status (its CHECK constraint lists the same ones).
 DocumentStatus = Literal["pending", "indexed", "no_text", "failed", "timed_out"]
@@ -336,10 +337,9 @@ def stored_meetings(conn: psycopg.Connection) -> list[StoredMeeting]:
     return [StoredMeeting(*row) for row in rows]
 
 
-def set_classification(
-    conn: psycopg.Connection, meeting_id: int, meeting_type: str, number: str | None, term_year: int | None
-) -> bool:
+def set_classification(conn: psycopg.Connection, meeting_id: int, kind: MeetingKind) -> bool:
     """True if anything changed."""
+    meeting_type, number, term_year = kind.meeting_type, kind.number, kind.term_year
     cur = conn.execute(
         """
         UPDATE meetings SET meeting_type = %s, meeting_number = %s, term_year = %s, classified = true

@@ -489,7 +489,7 @@ def refresh() -> None:
         changed = Counter()
         for m in db.stored_meetings(conn):
             kind = classify_meeting(m.title, m.first_page, m.meeting_date, m.model_type)
-            if db.set_classification(conn, m.id, kind.meeting_type, kind.number, kind.term_year):
+            if db.set_classification(conn, m.id, kind):
                 changed[kind.meeting_type] += 1
         merged = people.dedupe(conn)
         renamed = people.refresh_names(conn)
