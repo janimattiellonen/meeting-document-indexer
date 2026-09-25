@@ -13,10 +13,10 @@ export async function clientLoader() {
   return { people: orThrow(await api.GET("/api/people")) };
 }
 
-export default function People({ loaderData }: Route.ComponentProps) {
+export default function People(props: Route.ComponentProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get("nimi") ?? "";
-  const shown = filterByName(loaderData.people, filter);
+  const shown = filterByName(props.loaderData.people, filter);
 
   return (
     <div className="space-y-6">
@@ -32,8 +32,8 @@ export default function People({ loaderData }: Route.ComponentProps) {
         />
       </label>
       <p className="text-sm text-stone-600 dark:text-stone-400">
-        {shown.length} / {loaderData.people.length} henkilöä. Sama henkilö voi näkyä kahdesti, jos pöytäkirjat
-        kirjoittavat nimen eri tavoin (esim. pelkkä etunimi); ne yhdistetään komennolla{" "}
+        {shown.length} / {props.loaderData.people.length} henkilöä. Sama henkilö voi näkyä kahdesti, jos
+        pöytäkirjat kirjoittavat nimen eri tavoin (esim. pelkkä etunimi); ne yhdistetään komennolla{" "}
         <code>mi people merge</code>.
       </p>
       <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">

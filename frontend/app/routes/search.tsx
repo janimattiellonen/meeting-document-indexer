@@ -3,6 +3,7 @@ import { Form, Link, useNavigation } from "react-router";
 import { api, documentUrl, type MeetingHit, orThrow } from "~/api/client";
 import { Highlight } from "~/components/Highlight";
 import { formatDate, meetingTypeLabel } from "~/lib/format";
+import { meetingUrl } from "~/lib/meetings";
 import { MAX_QUERY_LENGTH, parseSearch, SORTS } from "~/lib/search";
 
 import type { Route } from "./+types/search";
@@ -14,7 +15,9 @@ export function meta({ loaderData }: Route.MetaArgs) {
 // Search state lives in the URL (?q=…&alkaen=…), so every search can be bookmarked and shared.
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   const { q, sort, yearFrom, yearTo } = parseSearch(new URL(request.url).searchParams);
-  if (!q) return { q, sort, yearFrom, yearTo, results: null };
+  if (!q) {
+    return { q, sort, yearFrom, yearTo, results: null };
+  }
 
   const response = await api.GET("/api/search", {
     params: { query: { q, sort, year_from: yearFrom, year_to: yearTo } },
@@ -22,19 +25,22 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   return { q, sort, yearFrom, yearTo, results: orThrow(response).results };
 }
 
-export default function Search({ loaderData }: Route.ComponentProps) {
-  const { q, sort, yearFrom, yearTo, results } = loaderData;
+export default function Search(props: Route.ComponentProps) {
   const searching = useNavigation().state === "loading";
 
   return (
     <div className="space-y-8">
       {/* key: re-create the inputs when the URL changes (back button), so they show the current search */}
-      <Form method="get" key={`${q}|${sort}|${yearFrom}|${yearTo}`} className="space-y-3">
+      <Form
+        method="get"
+        key={`${props.loaderData.q}|${props.loaderData.sort}|${props.loaderData.yearFrom}|${props.loaderData.yearTo}`}
+        className="space-y-3"
+      >
         <div className="flex gap-2">
           <input
             type="search"
             name="q"
-            defaultValue={q}
+            defaultValue={props.loaderData.q}
             maxLength={MAX_QUERY_LENGTH}
             placeholder="Hae pöytäkirjoista, esim. verkkosivut, t-paidat, kannettava"
             aria-label="Hakusanat"
@@ -55,7 +61,7 @@ export default function Search({ loaderData }: Route.ComponentProps) {
               name="alkaen"
               type="number"
               inputMode="numeric"
-              defaultValue={yearFrom}
+              defaultValue={props.loaderData.yearFrom}
               placeholder="2006"
               className={yearInput}
             />
@@ -66,7 +72,7 @@ export default function Search({ loaderData }: Route.ComponentProps) {
               name="asti"
               type="number"
               inputMode="numeric"
-              defaultValue={yearTo}
+              defaultValue={props.loaderData.yearTo}
               placeholder="2026"
               className={yearInput}
             />
@@ -75,7 +81,7 @@ export default function Search({ loaderData }: Route.ComponentProps) {
             Järjestys
             <select
               name="jarjestys"
-              defaultValue={sort}
+              defaultValue={props.loaderData.sort}
               onChange={(e) => e.currentTarget.form?.requestSubmit()}
               className="rounded-md border border-stone-300 bg-white px-2 py-1 dark:border-stone-700 dark:bg-stone-900"
             >
@@ -90,7 +96,11 @@ export default function Search({ loaderData }: Route.ComponentProps) {
       </Form>
 
       <div className={searching ? "opacity-50 transition-opacity" : undefined}>
-        {results === null ? <Intro /> : <Results q={q} results={results} />}
+        {props.loaderData.results === null ? (
+          <Intro />
+        ) : (
+          <Results q={props.loaderData.q} results={props.loaderData.results} />
+        )}
       </div>
     </div>
   );
@@ -118,21 +128,26 @@ function Intro() {
   );
 }
 
-function Results({ q, results }: { q: string; results: MeetingHit[] }) {
-  if (results.length === 0) {
+type ResultsProps = {
+  q: string;
+  results: MeetingHit[];
+};
+
+function Results(props: ResultsProps) {
+  if (props.results.length === 0) {
     return (
       <p className="text-stone-600 dark:text-stone-400">
-        Ei osumia haulle <strong>{q}</strong>. Kokeile toista sanaa tai vähemmän hakusanoja.
+        Ei osumia haulle <strong>{props.q}</strong>. Kokeile toista sanaa tai vähemmän hakusanoja.
       </p>
     );
   }
   return (
     <div className="space-y-4">
       <p className="text-sm text-stone-500">
-        {results.length} {results.length === 1 ? "kokous" : "kokousta"}
+        {props.results.length} {props.results.length === 1 ? "kokous" : "kokousta"}
       </p>
       <ol className="space-y-4">
-        {results.map((hit) => (
+        {props.results.map((hit) => (
           <li key={hit.meeting_id}>
             <ResultCard hit={hit} />
           </li>
@@ -142,30 +157,27 @@ function Results({ q, results }: { q: string; results: MeetingHit[] }) {
   );
 }
 
-function ResultCard({ hit }: { hit: MeetingHit }) {
-  const topics = hit.topics ?? [];
-  const text = hit.text ?? [];
-  const meetingUrl = (page?: number | null, topicId?: number) => {
-    const params = new URLSearchParams();
-    if (page) params.set("sivu", String(page));
-    if (topicId) params.set("kohta", String(topicId));
-    const query = params.toString();
-    return `/kokoukset/${hit.meeting_id}${query ? `?${query}` : ""}`;
-  };
+type ResultCardProps = {
+  hit: MeetingHit;
+};
+
+function ResultCard(props: ResultCardProps) {
+  const topics = props.hit.topics ?? [];
+  const text = props.hit.text ?? [];
 
   return (
     <article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm dark:border-stone-800 dark:bg-stone-900">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">
-          <Link to={meetingUrl()} className="hover:underline">
-            {hit.title}
+          <Link to={meetingUrl({ meetingId: props.hit.meeting_id })} className="hover:underline">
+            {props.hit.title}
           </Link>
         </h2>
         <span className="text-sm text-stone-500">
-          {formatDate(hit.meeting_date)} · {meetingTypeLabel(hit.meeting_type)} ·{" "}
+          {formatDate(props.hit.meeting_date)} · {meetingTypeLabel(props.hit.meeting_type)} ·{" "}
           {/* The original, at the first page with a match */}
           <a
-            href={documentUrl(hit.document_id, topics[0]?.page_no ?? text[0]?.page_no)}
+            href={documentUrl(props.hit.document_id, topics[0]?.page_no ?? text[0]?.page_no)}
             target="_blank"
             rel="noreferrer"
             className="underline hover:text-stone-800 dark:hover:text-stone-200"
@@ -178,7 +190,10 @@ function ResultCard({ hit }: { hit: MeetingHit }) {
       <ul className="mt-3 space-y-3">
         {topics.map((topic) => (
           <li key={topic.id}>
-            <Link to={meetingUrl(topic.page_no, topic.id)} className="group block">
+            <Link
+              to={meetingUrl({ meetingId: props.hit.meeting_id, page: topic.page_no, topicId: topic.id })}
+              className="group block"
+            >
               <span className="font-medium group-hover:underline">
                 {topic.item_number && <span className="text-stone-500">{topic.item_number}. </span>}
                 <Highlight text={topic.title} />
@@ -200,7 +215,7 @@ function ResultCard({ hit }: { hit: MeetingHit }) {
         {text.map((chunk, i) => (
           <li key={`text-${i}`}>
             <Link
-              to={meetingUrl(chunk.page_no)}
+              to={meetingUrl({ meetingId: props.hit.meeting_id, page: chunk.page_no })}
               className="block text-sm text-stone-600 hover:underline dark:text-stone-400"
             >
               <span className="mr-2 text-xs text-stone-500">

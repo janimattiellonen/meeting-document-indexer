@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDate, formatTime, meetingTypeLabel, yearOf } from "./format";
+import { attendanceStatusLabel, formatDate, formatTime, meetingTypeLabel, yearOf } from "./format";
 
 describe("format", () => {
   it("formats dates the Finnish way without a time zone shift", () => {
@@ -17,6 +17,12 @@ describe("format", () => {
   it("names meeting types in Finnish", () => {
     expect(meetingTypeLabel("board")).toBe("Hallituksen kokous");
     expect(meetingTypeLabel("autumn_general")).toBe("Syyskokous");
+  });
+
+  it("names attendance statuses in Finnish, and shows an unknown one as it is", () => {
+    expect(attendanceStatusLabel("present")).toBe("läsnä");
+    expect(attendanceStatusLabel("absent")).toBe("poissa");
+    expect(attendanceStatusLabel("toString")).toBe("toString");
   });
 
   it("takes the year of a date", () => {

@@ -11,6 +11,7 @@ export type TextHit = components["schemas"]["TextHit"];
 export type MeetingSummary = components["schemas"]["MeetingSummary"];
 export type MeetingView = components["schemas"]["MeetingView"];
 export type TopicView = components["schemas"]["TopicView"];
+export type AttendeeView = components["schemas"]["AttendeeView"];
 export type MeetingType = MeetingHit["meeting_type"];
 export type PersonSummary = components["schemas"]["PersonSummary"];
 export type PersonResponse = components["schemas"]["PersonResponse"];
