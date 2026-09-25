@@ -1,16 +1,5 @@
 import type { MeetingType } from "~/api/client";
 
-const MEETING_TYPES: Record<MeetingType, string> = {
-  board: "Hallituksen kokous",
-  spring_general: "Kevätkokous",
-  autumn_general: "Syyskokous",
-  extraordinary: "Ylimääräinen kokous",
-  other: "Yhdistyksen kokous",
-};
-
-// The API types attendance status as a plain string, so an unknown status is shown as it is.
-const ATTENDANCE_STATUSES: Record<string, string> = { present: "läsnä", absent: "poissa" };
-
 export function meetingTypeLabel(type: MeetingType): string {
   return MEETING_TYPES[type];
 }
@@ -40,3 +29,14 @@ export function formatTime(isoTime: string | null | undefined): string | null {
 export function yearOf(isoDate: string | null | undefined): string {
   return isoDate ? isoDate.slice(0, 4) : "Ei päivämäärää";
 }
+
+const MEETING_TYPES: Record<MeetingType, string> = {
+  board: "Hallituksen kokous",
+  spring_general: "Kevätkokous",
+  autumn_general: "Syyskokous",
+  extraordinary: "Ylimääräinen kokous",
+  other: "Yhdistyksen kokous",
+};
+
+// The API types attendance status as a plain string, so an unknown status is shown as it is.
+const ATTENDANCE_STATUSES: Record<string, string> = { present: "läsnä", absent: "poissa" };
