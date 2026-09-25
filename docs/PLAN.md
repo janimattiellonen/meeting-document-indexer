@@ -321,8 +321,10 @@ more authoritative than attendance.
 5. **Validate and repair.** Parse the date, and fall back to the first date on the first page when
    the model gives none or something implausible. Check that topic titles actually appear in the
    text (fuzzy match), and assign `page_no` by that match instead of trusting the model.
-6. **People.** Match each name to `person_aliases`, exactly first (ignoring case), then with
-   trigram similarity ≥ 0.8. Unmatched names create a new person.
+6. **People.** Match each name to `person_aliases`: exactly first (ignoring case), then by name key
+   (word order, case, punctuation, hyphens and nicknames ignored), then with trigram similarity
+   ≥ 0.8. The key step is for names of two or more words: a single word (a first name alone) is
+   never matched by key. Unmatched names create a new person.
    - The threshold is deliberately conservative. A one-letter typo (*Meikäläinen* /
      *Meikälainen*) scores 0.70, but two different people (*Mikko* / *Mika Virtanen*) score 0.71,
      so no threshold separates them.
