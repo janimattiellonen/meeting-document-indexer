@@ -125,19 +125,32 @@ def board_years(conn: psycopg.Connection) -> list[BoardYear]:
     return [BoardYear(year, n) for year, n in sorted(counts.items())]
 
 
-def board(conn: psycopg.Connection, year: int) -> Board | None:
-    meetings = [m for _, m in board_meetings(conn, year)]
-    if not meetings:
-        return None
+def all_boards(conn: psycopg.Connection, year: int | None = None) -> dict[int, Board]:
+    """The board of each year (or only of year), by year. Two queries however many years."""
+    meetings_by_year: dict[int, list[BoardMeeting]] = defaultdict(list)
+    year_of: dict[int, int] = {}
+    for term_year, meeting in board_meetings(conn, year):
+        meetings_by_year[term_year].append(meeting)
+        year_of[meeting.id] = term_year
     rows = conn.execute(
         """
-        SELECT a.person_id, p.canonical_name, a.status, a.role
+        SELECT a.meeting_id, a.person_id, p.canonical_name, a.status, a.role
         FROM attendance a JOIN people p ON p.id = a.person_id
         WHERE a.meeting_id = ANY(%s)
         """,
-        ([m.id for m in meetings],),
+        (list(year_of),),
     ).fetchall()
+    rows_by_year: dict[int, list[tuple[int, str, str, str | None]]] = defaultdict(list)
+    for meeting_id, person_id, name, status, role in rows:
+        rows_by_year[year_of[meeting_id]].append((person_id, name, status, role))
+    return {y: _board(y, meetings, rows_by_year[y]) for y, meetings in sorted(meetings_by_year.items())}
 
+
+def board(conn: psycopg.Connection, year: int) -> Board | None:
+    return all_boards(conn, year).get(year)
+
+
+def _board(year: int, meetings: list[BoardMeeting], rows: list[tuple[int, str, str, str | None]]) -> Board:
     by_person: dict[int, list[tuple[str, str | None]]] = defaultdict(list)
     names: dict[int, str] = {}
     for person_id, name, status, role in rows:
@@ -180,19 +193,10 @@ class BoardTerm:
 
 def person_terms(conn: psycopg.Connection, person_id: int) -> list[BoardTerm]:
     """The years a person was on the board, with their roles and attendance."""
-    years = conn.execute(
-        """
-        SELECT DISTINCT m.term_year FROM attendance a JOIN meetings m ON m.id = a.meeting_id
-        WHERE a.person_id = %s AND m.meeting_type = 'board' AND m.term_year IS NOT NULL
-        ORDER BY m.term_year
-        """,
-        (person_id,),
-    ).fetchall()
     terms: list[BoardTerm] = []
-    for (year,) in years:
-        found = board(conn, year)
-        member = next((m for m in found.members if m.person_id == person_id), None) if found else None
-        if found and member:
+    for year, found in all_boards(conn).items():
+        member = next((m for m in found.members if m.person_id == person_id), None)
+        if member:
             terms.append(BoardTerm(year, member.roles, member.present, member.absent, len(found.meetings)))
     return terms
 
@@ -200,8 +204,7 @@ def person_terms(conn: psycopg.Connection, person_id: int) -> list[BoardTerm]:
 def members_by_year(conn: psycopg.Connection) -> dict[int, list[int]]:
     """person id -> the years they were on the board."""
     result: dict[int, list[int]] = defaultdict(list)
-    for board_year in board_years(conn):
-        found = board(conn, board_year.year)
-        for member in found.members if found else []:
-            result[member.person_id].append(board_year.year)
+    for year, found in all_boards(conn).items():
+        for member in found.members:
+            result[member.person_id].append(year)
     return result
