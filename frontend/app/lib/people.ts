@@ -6,7 +6,9 @@ export function yearRanges(years: number[]): string {
   const ranges: string[] = [];
   for (let i = 0; i < sorted.length; i++) {
     const start = sorted[i];
-    while (i + 1 < sorted.length && sorted[i + 1] === sorted[i] + 1) i++;
+    while (i + 1 < sorted.length && sorted[i + 1] === sorted[i] + 1) {
+      i++;
+    }
     ranges.push(start === sorted[i] ? `${start}` : `${start}–${sorted[i]}`);
   }
   return ranges.join(", ");
@@ -14,7 +16,9 @@ export function yearRanges(years: number[]): string {
 
 /** First to last year: "2014–2018", or "2014" when they're the same. */
 export function yearSpan(first: number | null | undefined, last: number | null | undefined): string {
-  if (!first) return "–";
+  if (!first) {
+    return "–";
+  }
   return !last || last === first ? `${first}` : `${first}–${last}`;
 }
 

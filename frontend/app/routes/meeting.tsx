@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
-import { api, documentUrl, type MeetingView, orThrow, type TopicView } from "~/api/client";
+import { api, type AttendeeView, documentUrl, type MeetingView, orThrow, type TopicView } from "~/api/client";
 import { formatDate, formatTime, meetingTypeLabel } from "~/lib/format";
+import { parseMeetingParams } from "~/lib/meetings";
 
 import type { Route } from "./+types/meeting";
-
-type Attendee = MeetingView["attendees"][number];
 
 export function meta({ loaderData }: Route.MetaArgs) {
   return [{ title: loaderData ? `${loaderData.meeting.title} – Pöytäkirjat` : "Kokous – Pöytäkirjat" }];
@@ -14,24 +13,35 @@ export function meta({ loaderData }: Route.MetaArgs) {
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const meetingId = Number(params.meetingId);
-  if (!Number.isInteger(meetingId)) throw new Response("Not found", { status: 404 });
+  if (!Number.isInteger(meetingId)) {
+    throw new Response("Not found", { status: 404 });
+  }
   const response = await api.GET("/api/meetings/{meeting_id}", {
     params: { path: { meeting_id: meetingId } },
   });
   return { meeting: orThrow(response) };
 }
 
-export default function Meeting({ loaderData }: Route.ComponentProps) {
+export default function Meeting(props: Route.ComponentProps) {
   const [searchParams] = useSearchParams();
   // key: start fresh (page, selected item) when the URL changes, e.g. another search hit in the same meeting.
   return (
-    <MeetingPage key={searchParams.toString()} meeting={loaderData.meeting} searchParams={searchParams} />
+    <MeetingPage
+      key={searchParams.toString()}
+      meeting={props.loaderData.meeting}
+      searchParams={searchParams}
+    />
   );
 }
 
-function MeetingPage({ meeting, searchParams }: { meeting: MeetingView; searchParams: URLSearchParams }) {
-  const selectedTopic = Number(searchParams.get("kohta")) || null;
-  const [page, setPage] = useState<number | null>(Number(searchParams.get("sivu")) || null);
+type MeetingPageProps = {
+  meeting: MeetingView;
+  searchParams: URLSearchParams;
+};
+
+function MeetingPage(props: MeetingPageProps) {
+  const selected = parseMeetingParams(props.searchParams);
+  const [page, setPage] = useState<number | null>(selected.page);
 
   return (
     <div className="space-y-6">
@@ -39,35 +49,33 @@ function MeetingPage({ meeting, searchParams }: { meeting: MeetingView; searchPa
         ← Kokoukset
       </Link>
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-        <Details meeting={meeting} selectedTopic={selectedTopic} onShowPage={setPage} />
-        <DocumentPanel meeting={meeting} page={page} />
+        <Details meeting={props.meeting} selectedTopic={selected.topicId} onShowPage={setPage} />
+        <DocumentPanel meeting={props.meeting} page={page} />
       </div>
     </div>
   );
 }
 
-function Details({
-  meeting,
-  selectedTopic,
-  onShowPage,
-}: {
+type DetailsProps = {
   meeting: MeetingView;
   selectedTopic: number | null;
   onShowPage: (page: number) => void;
-}) {
-  const present = meeting.attendees.filter((a) => a.status === "present");
-  const absent = meeting.attendees.filter((a) => a.status === "absent");
-  const start = formatTime(meeting.start_time);
-  const end = formatTime(meeting.end_time);
+};
+
+function Details(props: DetailsProps) {
+  const present = props.meeting.attendees.filter((a) => a.status === "present");
+  const absent = props.meeting.attendees.filter((a) => a.status === "absent");
+  const start = formatTime(props.meeting.start_time);
+  const end = formatTime(props.meeting.end_time);
 
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{meeting.title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{props.meeting.title}</h1>
         <p className="mt-1 text-stone-600 dark:text-stone-400">
-          {meetingTypeLabel(meeting.meeting_type)} · {formatDate(meeting.meeting_date)}
+          {meetingTypeLabel(props.meeting.meeting_type)} · {formatDate(props.meeting.meeting_date)}
           {start && ` klo ${start}${end ? `–${end}` : ""}`}
-          {meeting.location && ` · ${meeting.location}`}
+          {props.meeting.location && ` · ${props.meeting.location}`}
         </p>
       </header>
 
@@ -82,19 +90,23 @@ function Details({
         </dd>
       </dl>
 
-      {meeting.summary && (
+      {props.meeting.summary && (
         <section>
           <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-stone-500">Yhteenveto</h2>
-          <p className="text-stone-700 dark:text-stone-300">{meeting.summary}</p>
+          <p className="text-stone-700 dark:text-stone-300">{props.meeting.summary}</p>
         </section>
       )}
 
       <section>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">Asiakohdat</h2>
         <ol className="space-y-2">
-          {meeting.topics.map((topic) => (
+          {props.meeting.topics.map((topic) => (
             <li key={topic.id}>
-              <TopicItem topic={topic} selected={topic.id === selectedTopic} onShowPage={onShowPage} />
+              <TopicItem
+                topic={topic}
+                selected={topic.id === props.selectedTopic}
+                onShowPage={props.onShowPage}
+              />
             </li>
           ))}
         </ol>
@@ -109,81 +121,95 @@ function Details({
 }
 
 /** Names as the minutes write them, each linking to the person. */
-function Attendees({ attendees, withRoles = false }: { attendees: Attendee[]; withRoles?: boolean }) {
-  if (attendees.length === 0) return <>–</>;
+type AttendeesProps = {
+  attendees: AttendeeView[];
+  withRoles?: boolean;
+};
+
+function Attendees(props: AttendeesProps) {
+  if (props.attendees.length === 0) {
+    return <>–</>;
+  }
   return (
     <>
-      {attendees.map((a, i) => (
+      {props.attendees.map((a, i) => (
         <span key={a.person_id}>
           {i > 0 && ", "}
           <Link to={`/henkilot/${a.person_id}`} className="hover:underline" title={a.person_name}>
             {a.name}
           </Link>
-          {withRoles && a.role && ` (${a.role})`}
+          {props.withRoles && a.role && ` (${a.role})`}
         </span>
       ))}
     </>
   );
 }
 
-function TopicItem({
-  topic,
-  selected,
-  onShowPage,
-}: {
+type TopicItemProps = {
   topic: TopicView;
   selected: boolean;
   onShowPage: (page: number) => void;
-}) {
+};
+
+function TopicItem(props: TopicItemProps) {
   const ref = useRef<HTMLElement>(null);
   // The item a search result pointed to is often far down the list.
   useEffect(() => {
-    if (selected) ref.current?.scrollIntoView({ block: "center" });
-  }, [selected]);
+    if (props.selected) {
+      ref.current?.scrollIntoView({ block: "center" });
+    }
+  }, [props.selected]);
 
   return (
     <article
       ref={ref}
       className={`rounded-lg border p-3 ${
-        selected
+        props.selected
           ? "border-amber-400 bg-amber-50 dark:border-amber-600 dark:bg-amber-950/40"
           : "border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900"
       }`}
     >
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="font-medium">
-          {topic.item_number && <span className="text-stone-500">{topic.item_number}. </span>}
-          {topic.title}
+          {props.topic.item_number && <span className="text-stone-500">{props.topic.item_number}. </span>}
+          {props.topic.title}
         </h3>
-        {topic.page_no && (
+        {props.topic.page_no && (
           <button
             type="button"
-            onClick={() => onShowPage(topic.page_no!)}
+            onClick={() => props.onShowPage(props.topic.page_no!)}
             className="shrink-0 text-xs text-stone-500 underline hover:text-stone-900 dark:hover:text-stone-200"
           >
-            Näytä s. {topic.page_no}
+            Näytä s. {props.topic.page_no}
           </button>
         )}
       </div>
-      {topic.summary && <p className="mt-1 text-sm text-stone-600 dark:text-stone-400">{topic.summary}</p>}
-      {topic.decisions && topic.decisions !== topic.summary && (
+      {props.topic.summary && (
+        <p className="mt-1 text-sm text-stone-600 dark:text-stone-400">{props.topic.summary}</p>
+      )}
+      {props.topic.decisions && props.topic.decisions !== props.topic.summary && (
         <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-300">
-          <span className="font-medium">Päätös:</span> {topic.decisions}
+          <span className="font-medium">Päätös:</span> {props.topic.decisions}
         </p>
       )}
     </article>
   );
 }
 
-function DocumentPanel({ meeting, page }: { meeting: MeetingView; page: number | null }) {
-  const url = documentUrl(meeting.document_id, page);
-  const isPdf = meeting.file_type === "pdf";
+type DocumentPanelProps = {
+  meeting: MeetingView;
+  page: number | null;
+};
+
+function DocumentPanel(props: DocumentPanelProps) {
+  const url = documentUrl(props.meeting.document_id, props.page);
+  const isPdf = props.meeting.file_type === "pdf";
 
   return (
     <aside className="space-y-2 lg:sticky lg:top-4 lg:self-start">
       <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="truncate text-stone-500" title={meeting.rel_path}>
-          {meeting.rel_path}
+        <span className="truncate text-stone-500" title={props.meeting.rel_path}>
+          {props.meeting.rel_path}
         </span>
         <a href={url} target="_blank" rel="noreferrer" className="shrink-0 underline">
           Avaa uuteen välilehteen
@@ -194,12 +220,12 @@ function DocumentPanel({ meeting, page }: { meeting: MeetingView; page: number |
         <iframe
           key={url}
           src={url}
-          title={`Pöytäkirja: ${meeting.title}`}
+          title={`Pöytäkirja: ${props.meeting.title}`}
           className="h-[80vh] w-full rounded-lg border border-stone-200 bg-white dark:border-stone-800"
         />
       ) : (
         <p className="rounded-lg border border-stone-200 bg-white p-4 text-sm dark:border-stone-800 dark:bg-stone-900">
-          Selain ei näytä {meeting.file_type}-tiedostoja suoraan.{" "}
+          Selain ei näytä {props.meeting.file_type}-tiedostoja suoraan.{" "}
           <a href={url} className="underline">
             Lataa pöytäkirja
           </a>

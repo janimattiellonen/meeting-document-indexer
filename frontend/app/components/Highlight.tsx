@@ -1,27 +1,13 @@
-// The API marks search matches with these control characters (backend search.py). Splitting on them and
-// rendering the parts as React text means nothing from a document is ever interpreted as HTML.
-const MARK_START = "\u0002";
-const MARK_END = "\u0003";
+import { highlightParts } from "~/lib/highlight";
 
-export function highlightParts(text: string): { text: string; match: boolean }[] {
-  const parts: { text: string; match: boolean }[] = [];
-  for (const [i, segment] of text.split(MARK_START).entries()) {
-    const [matched, rest] = i === 0 ? [null, segment] : splitOnce(segment, MARK_END);
-    if (matched) parts.push({ text: matched, match: true });
-    if (rest) parts.push({ text: rest, match: false });
-  }
-  return parts;
-}
+type HighlightProps = {
+  text: string;
+};
 
-function splitOnce(text: string, separator: string): [string, string] {
-  const index = text.indexOf(separator);
-  return index === -1 ? [text, ""] : [text.slice(0, index), text.slice(index + separator.length)];
-}
-
-export function Highlight({ text }: { text: string }) {
+export function Highlight(props: HighlightProps) {
   return (
     <>
-      {highlightParts(text).map((part, i) =>
+      {highlightParts(props.text).map((part, i) =>
         part.match ? (
           <mark key={i} className="rounded-sm bg-amber-200 px-0.5 text-inherit dark:bg-amber-500/40">
             {part.text}
@@ -32,9 +18,4 @@ export function Highlight({ text }: { text: string }) {
       )}
     </>
   );
-}
-
-/** The text without markers, e.g. for a page title. */
-export function plainText(text: string): string {
-  return text.replaceAll(MARK_START, "").replaceAll(MARK_END, "");
 }

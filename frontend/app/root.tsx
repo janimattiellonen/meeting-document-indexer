@@ -3,7 +3,11 @@ import { isRouteErrorResponse, Links, Meta, NavLink, Outlet, Scripts, ScrollRest
 import type { Route } from "./+types/root";
 import "./app.css";
 
-export function Layout({ children }: { children: React.ReactNode }) {
+type LayoutProps = {
+  children: React.ReactNode;
+};
+
+export function Layout(props: LayoutProps) {
   return (
     <html lang="fi">
       <head>
@@ -13,7 +17,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body className="min-h-screen bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100">
-        {children}
+        {props.children}
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -23,6 +27,46 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export function meta() {
   return [{ title: "Pöytäkirjat" }];
+}
+
+export default function App() {
+  return (
+    <>
+      <Header />
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <Outlet />
+      </main>
+    </>
+  );
+}
+
+export function HydrateFallback() {
+  return <p className="p-8 text-stone-500">Ladataan…</p>;
+}
+
+export function ErrorBoundary(props: Route.ErrorBoundaryProps) {
+  let message = "Jokin meni pieleen";
+  let details = "Odottamaton virhe.";
+  if (isRouteErrorResponse(props.error)) {
+    message = props.error.status === 404 ? "Ei löytynyt" : `Virhe ${props.error.status}`;
+    details =
+      props.error.status === 404
+        ? "Sivua, kokousta tai henkilöä ei löytynyt."
+        : props.error.status < 500
+          ? "Palvelin ei hyväksynyt pyyntöä. Tarkista hakusanat ja rajaukset."
+          : "Palvelin ei vastannut. Onko taustapalvelu käynnissä (`uv run mi serve`)?";
+  } else if (import.meta.env.DEV && props.error instanceof Error) {
+    details = props.error.message;
+  }
+  return (
+    <>
+      <Header />
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <h1 className="text-xl font-semibold">{message}</h1>
+        <p className="mt-2 text-stone-600 dark:text-stone-400">{details}</p>
+      </main>
+    </>
+  );
 }
 
 function Header() {
@@ -52,45 +96,5 @@ function Header() {
         </nav>
       </div>
     </header>
-  );
-}
-
-export default function App() {
-  return (
-    <>
-      <Header />
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <Outlet />
-      </main>
-    </>
-  );
-}
-
-export function HydrateFallback() {
-  return <p className="p-8 text-stone-500">Ladataan…</p>;
-}
-
-export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Jokin meni pieleen";
-  let details = "Odottamaton virhe.";
-  if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "Ei löytynyt" : `Virhe ${error.status}`;
-    details =
-      error.status === 404
-        ? "Sivua, kokousta tai henkilöä ei löytynyt."
-        : error.status < 500
-          ? "Palvelin ei hyväksynyt pyyntöä. Tarkista hakusanat ja rajaukset."
-          : "Palvelin ei vastannut. Onko taustapalvelu käynnissä (`uv run mi serve`)?";
-  } else if (import.meta.env.DEV && error instanceof Error) {
-    details = error.message;
-  }
-  return (
-    <>
-      <Header />
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <h1 className="text-xl font-semibold">{message}</h1>
-        <p className="mt-2 text-stone-600 dark:text-stone-400">{details}</p>
-      </main>
-    </>
   );
 }
