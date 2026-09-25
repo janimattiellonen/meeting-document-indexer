@@ -206,10 +206,10 @@ def insert_meeting(conn: psycopg.Connection, document_id: int, fields: dict) -> 
     return returned_id(
         conn.execute(
             """
-            INSERT INTO meetings (document_id, title, meeting_type, meeting_date, start_time, end_time,
-                                  location, summary, raw_extraction)
-            VALUES (%(document_id)s, %(title)s, %(meeting_type)s, %(meeting_date)s, %(start_time)s,
-                    %(end_time)s, %(location)s, %(summary)s, '{}')
+            INSERT INTO meetings (document_id, title, meeting_type, meeting_number, term_year, classified,
+                                  meeting_date, start_time, end_time, location, summary, raw_extraction)
+            VALUES (%(document_id)s, %(title)s, %(meeting_type)s, %(meeting_number)s, %(term_year)s, true,
+                    %(meeting_date)s, %(start_time)s, %(end_time)s, %(location)s, %(summary)s, '{}')
             RETURNING id
             """,
             {**fields, "document_id": document_id},
@@ -309,6 +309,56 @@ def relemmatize(
 
 
 @dataclass
+class StoredMeeting:
+    """What classify_meeting needs, for re-deriving it from stored text."""
+
+    id: int
+    title: str
+    first_page: str
+    meeting_date: date | None
+    model_type: MeetingType  # as the model gave it
+
+
+def stored_meetings(conn: psycopg.Connection) -> list[StoredMeeting]:
+    rows = conn.execute(
+        """
+        SELECT m.id, m.title, coalesce(p.text, ''), m.meeting_date,
+               coalesce(m.raw_extraction -> 'llm' ->> 'meeting_type', m.meeting_type)
+        FROM meetings m LEFT JOIN document_pages p ON p.document_id = m.document_id AND p.page_no = 1
+        ORDER BY m.id
+        """
+    ).fetchall()
+    return [StoredMeeting(*row) for row in rows]
+
+
+def set_classification(
+    conn: psycopg.Connection, meeting_id: int, meeting_type: str, number: str | None, term_year: int | None
+) -> bool:
+    """True if anything changed."""
+    cur = conn.execute(
+        """
+        UPDATE meetings SET meeting_type = %s, meeting_number = %s, term_year = %s, classified = true
+        WHERE id = %s AND (NOT classified OR (meeting_type, meeting_number, term_year)
+                           IS DISTINCT FROM (%s, %s, %s))
+        """,
+        (meeting_type, number, term_year, meeting_id, meeting_type, number, term_year),
+    )
+    return cur.rowcount == 1
+
+
+def unrefreshed_counts(conn: psycopg.Connection) -> tuple[int, int]:
+    """(meetings, name spellings) stored before their classification and name keys were computed."""
+    row = conn.execute(
+        """
+        SELECT (SELECT count(*) FROM meetings WHERE NOT classified),
+               (SELECT count(*) FROM person_aliases WHERE name_key IS NULL)
+        """
+    ).fetchone()
+    assert row is not None
+    return row[0], row[1]
+
+
+@dataclass
 class TopicView:
     item_number: str | None
     title: str
@@ -323,12 +373,16 @@ class AttendeeView:
     name: str  # as written in the document
     status: str
     role: str | None
+    person_id: int
+    person_name: str  # the person's name, the same in every meeting
 
 
 @dataclass
 class MeetingView:
     title: str
     meeting_type: MeetingType
+    meeting_number: str | None
+    term_year: int | None
     meeting_date: date | None
     start_time: time | None
     end_time: time | None
@@ -359,8 +413,8 @@ def _load_meeting(conn: psycopg.Connection, condition: LiteralString, value: obj
     """condition is a fixed SQL fragment from this module; the value is always passed as a parameter."""
     row = conn.execute(
         f"""
-        SELECT m.id, m.title, m.meeting_type, m.meeting_date, m.start_time, m.end_time, m.location,
-               m.summary, coalesce(m.raw_extraction -> 'warnings', '[]'),
+        SELECT m.id, m.title, m.meeting_type, m.meeting_number, m.term_year, m.meeting_date, m.start_time,
+               m.end_time, m.location, m.summary, coalesce(m.raw_extraction -> 'warnings', '[]'),
                d.id, d.rel_path, d.file_type, d.page_count
         FROM meetings m JOIN documents d ON d.id = m.document_id
         WHERE {condition}
@@ -372,8 +426,9 @@ def _load_meeting(conn: psycopg.Connection, condition: LiteralString, value: obj
     meeting_id, *fields, warnings, document_id, rel_path, file_type, page_count = row
     attendees = conn.execute(
         """
-        SELECT name_as_written, status, role FROM attendance
-        WHERE meeting_id = %s ORDER BY status DESC, name_as_written
+        SELECT a.name_as_written, a.status, a.role, a.person_id, p.canonical_name
+        FROM attendance a JOIN people p ON p.id = a.person_id
+        WHERE a.meeting_id = %s ORDER BY a.status DESC, a.name_as_written
         """,
         (meeting_id,),
     ).fetchall()
@@ -402,6 +457,8 @@ class MeetingSummary:
     id: int
     title: str
     meeting_type: MeetingType
+    meeting_number: str | None
+    term_year: int | None
     meeting_date: date | None
     location: str | None
     topic_count: int
@@ -414,7 +471,7 @@ def list_meetings(conn: psycopg.Connection) -> list[MeetingSummary]:
     """Every meeting, newest first."""
     rows = conn.execute(
         """
-        SELECT m.id, m.title, m.meeting_type, m.meeting_date, m.location,
+        SELECT m.id, m.title, m.meeting_type, m.meeting_number, m.term_year, m.meeting_date, m.location,
                count(t.id), count(t.decisions), d.id, d.file_type
         FROM meetings m
         JOIN documents d ON d.id = m.document_id

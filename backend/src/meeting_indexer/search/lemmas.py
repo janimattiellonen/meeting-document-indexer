@@ -122,3 +122,9 @@ def matching_forms(word: str) -> set[str]:
     """Everything a document word can be matched by: its base forms and compound parts."""
     bases, parts = analyses(word)
     return {*bases, *parts}
+
+
+@lru_cache(maxsize=10_000)
+def is_first_name(word: str) -> bool:
+    """Whether Voikko knows the word as a first name ("Antti"; "Kari" is also a surname and a noun)."""
+    return any(a.get("CLASS") == "etunimi" for a in _analyze(word))

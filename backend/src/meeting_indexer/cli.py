@@ -11,13 +11,16 @@ from typing import Annotated
 import ollama
 import typer
 
-from meeting_indexer import db, evaluation
+from meeting_indexer import boards, db, evaluation, people
 from meeting_indexer.config import REPO_ROOT, get_settings
 from meeting_indexer.extract import SUPPORTED_SUFFIXES, discover, normalize_path, relative_path, sha256
 from meeting_indexer.indexer import Result, ResultStatus, RunStopped, TimeLimitedAnalyzer, index_paths
+from meeting_indexer.normalize import classify_meeting
 from meeting_indexer.search import lemmas
 
 app = typer.Typer(help="Index and search meeting minutes. Everything runs locally.", no_args_is_help=True)
+people_app = typer.Typer(help="List people, and fix how names were matched to them.", no_args_is_help=True)
+app.add_typer(people_app, name="people")
 
 EVAL_DIR = REPO_ROOT / "data" / "eval"
 LOG_DIR = REPO_ROOT / "data" / "logs"
@@ -111,6 +114,7 @@ def status() -> None:
             problems = db.problem_documents(conn)
             stored = db.stored_states(conn)
             unlemmatized = db.unlemmatized_counts(conn)
+            unrefreshed = db.unrefreshed_counts(conn)
         summary = ", ".join(f"{s}: {n}" for s, n in sorted(counts.items())) or "no documents indexed yet"
         report(True, "database", summary)
     except Exception as e:
@@ -141,6 +145,15 @@ def status() -> None:
             False,
             "search",
             f"{topics} agenda items and {chunks} text chunks lack base forms; run `mi relemmatize`",
+        )
+        healthy = False
+    if any(unrefreshed):
+        meetings, aliases = unrefreshed
+        report(
+            False,
+            "people",
+            f"{meetings} meetings lack their type from the text and {aliases} name spellings their match key;"
+            " run `mi refresh`",
         )
         healthy = False
 
@@ -365,7 +378,10 @@ def show(path: DocumentPath) -> None:
         return ", ".join(f"{a.name} ({a.role})" if a.role else a.name for a in attendees) or "-"
 
     time_range = "-".join(t.strftime("%H:%M") for t in (meeting.start_time, meeting.end_time) if t)
-    typer.echo(typer.style(meeting.title, bold=True) + f"  [{meeting.meeting_type}]")
+    number = f", {meeting.meeting_number}" if meeting.meeting_number else ""
+    typer.echo(
+        typer.style(meeting.title, bold=True) + f"  [{meeting.meeting_type}{number}, {meeting.term_year}]"
+    )
     typer.echo(f"Tiedosto:   {rel_path}")
     typer.echo(f"Aika:       {meeting.meeting_date or '?'} {time_range}".rstrip())
     typer.echo(f"Paikka:     {meeting.location or '-'}")
@@ -459,6 +475,118 @@ def relemmatize(
     with db.connect() as conn:
         updated = db.relemmatize(conn, lemmas.document_lemmas, only_missing=not all_rows)
     typer.echo(f"Updated {updated} rows.")
+
+
+@app.command()
+def refresh() -> None:
+    """Recompute what is derived from the stored text, without the LLM: meeting types, numbers and term
+    years, name match keys, merges of the same name spelled differently, and the name shown for each person.
+
+    Needed once after upgrading, and after a change to normalize.classify_meeting or people.name_key.
+    """
+    require_voikko()
+    with db.connect() as conn:
+        changed = Counter()
+        for m in db.stored_meetings(conn):
+            kind = classify_meeting(m.title, m.first_page, m.meeting_date, m.model_type)
+            if db.set_classification(conn, m.id, kind.meeting_type, kind.number, kind.term_year):
+                changed[kind.meeting_type] += 1
+        merged = people.dedupe(conn)
+        renamed = people.refresh_names(conn)
+    by_type = ", ".join(f"{t}: {n}" for t, n in sorted(changed.items()))
+    typer.echo(f"Meetings updated: {sum(changed.values())}" + (f" ({by_type})" if by_type else ""))
+    typer.echo(f"People merged by spelling: {sum(len(m.merged) for m in merged)}")
+    for m in merged:
+        typer.echo(f"  {m.kept} <- {', '.join(m.merged)}")
+    typer.echo(f"Names changed: {renamed}")
+
+
+def years(first: int | None, last: int | None) -> str:
+    if first is None:
+        return "-"
+    return str(first) if first == last else f"{first}-{last}"
+
+
+@people_app.command("list")
+def people_list(query: Annotated[str | None, typer.Argument(help="Part of any spelling of the name")] = None):
+    """People, with the meetings they attended and the years they were on the board."""
+    with db.connect() as conn:
+        rows = people.list_people(conn, query)
+        board = boards.members_by_year(conn)
+    for p in rows:
+        on_board = ", ".join(str(y) for y in board.get(p.id, [])) or "-"
+        typer.echo(
+            f"{p.id:>5}  {p.name:<32} {p.meetings:>3} meetings  {years(p.first_year, p.last_year):<10}"
+            f" board: {on_board}"
+        )
+    typer.echo(f"\n{len(rows)} people")
+
+
+@people_app.command("suggest")
+def people_suggest() -> None:
+    """Pairs that may be the same person: initials, first names alone, similar spellings. Merge by hand."""
+    with db.connect() as conn:
+        suggestions = people.suggest(conn)
+    for s in suggestions:
+        typer.echo(
+            f"{s.a.id:>5} {s.a.name} ({s.a.meetings}, {years(s.a.first_year, s.a.last_year)})"
+            f"  ~  {s.b.id} {s.b.name} ({s.b.meetings}, {years(s.b.first_year, s.b.last_year)})"
+            f"  [{s.reason}]"
+        )
+    typer.echo(f"\n{len(suggestions)} suggestions. Merge with `mi people merge <keep> <other>`.")
+
+
+@people_app.command("merge")
+def people_merge(
+    keep: Annotated[int, typer.Argument(help="Id of the person to keep")],
+    others: Annotated[list[int], typer.Argument(help="Ids of the people to merge into it")],
+) -> None:
+    """Merge people who are the same person. Their meetings and spellings move to the one kept."""
+    with db.connect() as conn:
+        try:
+            people.merge(conn, keep, others)
+        except people.PersonNotFound as e:
+            typer.echo(f"No person with id {e}")
+            raise typer.Exit(1) from None
+        row = conn.execute("SELECT canonical_name FROM people WHERE id = %s", (keep,)).fetchone()
+    typer.echo(f"Merged into {keep} {row[0] if row else ''}.")
+
+
+@people_app.command("rename")
+def people_rename(
+    person_id: Annotated[int, typer.Argument(help="Id of the person")],
+    name: Annotated[str, typer.Argument(help="The name to show")],
+) -> None:
+    """Set the name shown for a person. It is kept instead of the most common spelling."""
+    with db.connect() as conn:
+        try:
+            people.rename(conn, person_id, name)
+        except people.PersonNotFound:
+            typer.echo(f"No person with id {person_id}")
+            raise typer.Exit(1) from None
+        except ValueError as e:
+            typer.echo(str(e))
+            raise typer.Exit(1) from None
+    typer.echo(f"Renamed {person_id} to {name}.")
+
+
+@app.command()
+def board(year: Annotated[int, typer.Argument(help="The board's term year")]) -> None:
+    """The board of a year, from the attendance of that year's board meetings."""
+    with db.connect() as conn:
+        found = boards.board(conn, year)
+    if found is None:
+        typer.echo(f"No board meetings for {year}.")
+        raise typer.Exit(1)
+    total = len(found.meetings)
+    typer.echo(typer.style(f"Hallitus {year}", bold=True) + f"  ({total} board meetings)")
+    for m in found.members:
+        roles = f" ({', '.join(f'{r.name} {r.meetings}' for r in m.roles)})" if m.roles else ""
+        typer.echo(f"  {m.name}{roles}  present {m.present}/{total}")
+    if found.others:
+        typer.echo("Others at board meetings:")
+        for m in found.others:
+            typer.echo(f"  {m.name}  present {m.present}/{total}")
 
 
 @app.command()

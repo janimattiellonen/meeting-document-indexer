@@ -81,6 +81,26 @@ def test_document_is_stored_with_meeting_people_topics_and_chunks(
     assert chunk_pages == [(1,), (2,)]
 
 
+def test_meeting_type_number_and_term_year_come_from_the_text(
+    conn: psycopg.Connection, root: Path, minutes: Path
+) -> None:
+    # The model often mislabelled board meetings; the header says "Hallituksen kokous 3/2019".
+    index_file(conn, minutes, root, FakeAnalyzer(fake_meeting(meeting_type="autumn_general")), MODEL)
+
+    meeting = db.load_meeting(conn, "2019/hallitus-3-2019.pdf")
+    assert meeting is not None
+    assert (meeting.meeting_type, meeting.meeting_number, meeting.term_year) == ("board", "3/2019", 2019)
+
+
+def test_attendees_are_linked_to_their_person(conn: psycopg.Connection, root: Path, minutes: Path) -> None:
+    index_file(conn, minutes, root, FakeAnalyzer(fake_meeting(present=[Person(name="Laine, Liisa")])), MODEL)
+
+    meeting = db.load_meeting(conn, "2019/hallitus-3-2019.pdf")
+    assert meeting is not None
+    liisa = next(a for a in meeting.attendees if a.name == "Laine, Liisa")
+    assert liisa.person_name == "Liisa Laine"
+
+
 def test_stored_topics_are_found_by_finnish_full_text_search(
     conn: psycopg.Connection, root: Path, minutes: Path
 ) -> None:
