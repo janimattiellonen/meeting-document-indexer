@@ -7,8 +7,27 @@ machine; no document content ever leaves it.
 - **Phases 0–2 are merged.** Phase 2 is still waiting for a run over the full set of documents.
 - **Phase 3 (search API):**
   - built: full-text search with Voikko base forms (§8), the meeting list and details, and the original documents;
-  - still to do: the board endpoint (with Phase 6).
+  - the board endpoint came with Phase 6.
 - **Phase 4 (frontend):** search, a meeting list, and a meeting page with the PDF.
+- **Phase 6 (people and boards):** built on a branch; the boards still need checking against a
+  couple of known years. What it does and what it found in the full run:
+  - **Meeting types come from the text.** The model gave nearly half of the 126 documents the wrong
+    type (most board meetings as `autumn_general`). The header states the type ("HALLITUKSEN
+    KOKOUS", "Yhdistyksen syyskokous"), so `normalize.classify_meeting` reads it, together with the
+    meeting number and term year. The model's type is only a fallback.
+  - **The corpus is mostly general meetings:** 88 board meetings, 38 general and other meetings.
+  - **Term year:** from the meeting number, except that an organizing meeting (järjestäytymiskokous)
+    held from September on is the next year's board.
+  - **Names:** spellings with the same key (word order, case, commas, hyphens and nicknames ignored)
+    are one person. Initials and first names alone are only suggested (`mi people suggest`) and
+    merged by hand (`mi people merge`). The name shown is the most common full spelling, first name
+    first (Voikko knows Finnish first names), unless set with `mi people rename`.
+  - **The board of a year** is the people at that term's board meetings, minus those the minutes
+    mark as outsiders. Roles are counted per meeting, since some boards rotate the meeting
+    secretary. The same minutes stored twice (.doc and .pdf) count once.
+  - `mi refresh` recomputes all of this for stored documents without the LLM; `mi status` asks for it.
+  - **Not done:** reading the elected board from the general meetings' election items, which would be
+    more authoritative than attendance; the `person` search filter.
 
 **Running it locally:**
 
@@ -351,7 +370,7 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
   names of documents not reached if the run stopped.
 - Other commands: `mi status` (counts per status, lists failed and scanned documents),
   `mi reindex <path>`, `mi show <path>` (prints one document's extraction), and
-  `mi people list|merge <a> <b>` (Phase 6).
+  `mi people list|suggest|merge|rename`, `mi board <year>` and `mi refresh` (Phase 6).
 
 ---
 
@@ -422,7 +441,8 @@ One document must never hold up a run, and nothing a run skips may go unrecorded
 
 - Built so far: `/api/search` with `q` (1–200 characters), `year_from`/`year_to` (1900–2999),
   `type` and `sort` (`relevance`, `oldest`, `newest`), full-text only; `/api/meetings` without
-  filters; `/api/meetings/{id}`; `/api/documents/{id}/file`. `person` comes with the people pages.
+  filters; `/api/meetings/{id}`; `/api/documents/{id}/file`; `/api/people`, `/api/people/{id}`, `/api/boards` and `/api/boards/{year}`
+  (Phase 6: the board is under `/api/boards/{year}` instead of `?year=`). The `person` search filter isn't built.
 - The API binds to `127.0.0.1` only.
 - The OpenAPI schema is exported to `frontend/app/api/schema.d.ts` with a `pnpm gen:api` script.
 

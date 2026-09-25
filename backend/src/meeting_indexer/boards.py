@@ -10,7 +10,7 @@ elect the board would be more authoritative, but the elections are free text; se
 
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 
 import psycopg
@@ -87,7 +87,7 @@ class Board:
     year: int
     meetings: list[BoardMeeting]
     members: list[BoardMember]
-    others: list[BoardMember] = field(default_factory=list)  # at board meetings, not on the board
+    others: list[BoardMember]  # at board meetings, not on the board
 
 
 @dataclass

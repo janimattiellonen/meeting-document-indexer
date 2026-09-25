@@ -154,6 +154,11 @@ Open **http://127.0.0.1:5180**. The dev server forwards `/api` to the API.
     newest first;
   - every search is in the address, so it can be bookmarked.
 - **Kokoukset (meetings):** all meetings by year.
+- **Hallitus (board):** the board of each year, with roles and attendance. It is inferred from who
+  attended that year's board meetings, not from the elections, so check anything important against the
+  minutes.
+- **Henkilöt (people):** everyone in the minutes, the years they were on the board, and their meetings.
+  Names on a meeting page link here.
 - **A meeting:** attendance, summary and agenda items with decisions, next to the original PDF.
   Coming from a search result, it opens at the agenda item and at its page in the PDF.
 
@@ -173,6 +178,12 @@ Run the `mi` commands from `backend/`, as `uv run mi …`. Add `-v` for detailed
 | `mi reindex <paths…>` | Re-extracts documents even if they haven't changed. `--time-limit N` |
 | `mi show <file>` | Prints what was extracted from a document |
 | `mi eval` | Measures extraction accuracy against hand-checked files in `data/eval/`. `--init <file>` writes a draft to correct |
+| `mi refresh` | Recomputes meeting types, numbers and term years from the stored text, and merges names spelled differently. No LLM. Needed once after upgrading |
+| `mi board <year>` | The board of a year |
+| `mi people list [name]` | People, with their meetings and board years |
+| `mi people suggest` | Pairs that may be the same person: initials, first names alone, similar spellings |
+| `mi people merge <keep> <other…>` | Merges people by id. Survives re-indexing |
+| `mi people rename <id> <name>` | Sets the name shown for a person |
 | `mi relemmatize` | Computes the search base forms for text already in the database, without the LLM. `--all` recomputes everything |
 | `mi serve` | Runs the API on `127.0.0.1:8000`. `--port N` |
 | `mi openapi <file>` | Writes the API schema, used to generate the web app's types |
@@ -217,7 +228,7 @@ pnpm gen:api                     # after an API change: regenerate app/api/schem
 
 These are planned in [`docs/PLAN.md`](docs/PLAN.md):
 - meaning-based search, which finds synonyms (*nettisivut* for *kotisivu-uudistus*);
-- people and board pages ("who was on the board in 2019");
+- the board as elected at the general meetings (the board pages use attendance);
 - answers to questions, with links to the source documents;
 - OCR for scanned documents;
 - serving the built web app together with the API, and database backups.
@@ -230,5 +241,7 @@ These are planned in [`docs/PLAN.md`](docs/PLAN.md):
 | `mi status`: ollama FAIL | Start Ollama. Check that `OLLAMA_HOST` in `.env` is `http://127.0.0.1:11434` |
 | `mi status`: voikko FAIL | `brew install libvoikko` |
 | `mi status`: "… lack base forms; run `mi relemmatize`" | `uv run mi relemmatize` |
+| `mi status`: "… run `mi refresh`" | `uv run mi refresh` |
+| The same person appears twice (for example a first name alone) | `uv run mi people suggest`, then `uv run mi people merge <keep> <other>` |
 | The web app says the server isn't responding | Start the API: `uv run mi serve` in `backend/` |
 | `pnpm dev`: port 5180 in use | Another app is using it; stop it, or change `server.port` in `frontend/vite.config.ts` |

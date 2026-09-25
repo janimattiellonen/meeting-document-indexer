@@ -43,6 +43,12 @@ function Header() {
           <NavLink to="/kokoukset" className={link}>
             Kokoukset
           </NavLink>
+          <NavLink to="/hallitus" className={link}>
+            Hallitus
+          </NavLink>
+          <NavLink to="/henkilot" className={link}>
+            Henkilöt
+          </NavLink>
         </nav>
       </div>
     </header>
@@ -71,7 +77,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     message = error.status === 404 ? "Ei löytynyt" : `Virhe ${error.status}`;
     details =
       error.status === 404
-        ? "Sivua tai kokousta ei löytynyt."
+        ? "Sivua, kokousta tai henkilöä ei löytynyt."
         : error.status < 500
           ? "Palvelin ei hyväksynyt pyyntöä. Tarkista hakusanat ja rajaukset."
           : "Palvelin ei vastannut. Onko taustapalvelu käynnissä (`uv run mi serve`)?";

@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 # pg_trgm similarity above which a new spelling counts as a known person ("Janne Virtanen" ~ "Jane Virtanen").
 SIMILARITY_THRESHOLD = 0.8
-# Nicknames and notes: "Antti (Andy) Esimerkki", "Tero “Tepi” Testaaja", "Liisa Laine (5§ alk.)".
+# Nicknames and notes: "Antti (Andy) Esimerkki", "Teppo “Tepi” Testaaja", "Liisa Laine (5§ alk.)".
 ASIDES = re.compile(r"\([^)]*\)|[“”\"«»][^“”\"«»]*[“”\"«»]")
 # Keys this similar are suggested as the same person, for a typo ("Norrkoski" / "Norkoski").
 SUGGEST_RATIO = 0.85

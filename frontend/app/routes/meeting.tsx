@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { api, documentUrl, type MeetingView, orThrow, type TopicView } from "~/api/client";
+
+type Attendee = MeetingView["attendees"][number];
 import { formatDate, formatTime, meetingTypeLabel } from "~/lib/format";
 
 import type { Route } from "./+types/meeting";
@@ -71,9 +73,13 @@ function Details({
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-stone-500">Läsnä</dt>
-        <dd>{present.map((a) => (a.role ? `${a.name} (${a.role})` : a.name)).join(", ") || "–"}</dd>
+        <dd>
+          <Attendees attendees={present} withRoles />
+        </dd>
         <dt className="text-stone-500">Poissa</dt>
-        <dd>{absent.map((a) => a.name).join(", ") || "–"}</dd>
+        <dd>
+          <Attendees attendees={absent} />
+        </dd>
       </dl>
 
       {meeting.summary && (
@@ -99,6 +105,24 @@ function Details({
         alkuperäinen pöytäkirja.
       </p>
     </div>
+  );
+}
+
+/** Names as the minutes write them, each linking to the person. */
+function Attendees({ attendees, withRoles = false }: { attendees: Attendee[]; withRoles?: boolean }) {
+  if (attendees.length === 0) return <>–</>;
+  return (
+    <>
+      {attendees.map((a, i) => (
+        <span key={a.person_id}>
+          {i > 0 && ", "}
+          <Link to={`/henkilot/${a.person_id}`} className="hover:underline" title={a.person_name}>
+            {a.name}
+          </Link>
+          {withRoles && a.role && ` (${a.role})`}
+        </span>
+      ))}
+    </>
   );
 }
 

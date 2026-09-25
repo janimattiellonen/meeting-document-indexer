@@ -5,7 +5,7 @@ const MEETING_TYPES: Record<MeetingType, string> = {
   spring_general: "Kevätkokous",
   autumn_general: "Syyskokous",
   extraordinary: "Ylimääräinen kokous",
-  other: "Muu kokous",
+  other: "Yhdistyksen kokous",
 };
 
 export function meetingTypeLabel(type: MeetingType): string {
